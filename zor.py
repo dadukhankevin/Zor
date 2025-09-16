@@ -79,7 +79,7 @@ class Layer:
         return vector_reward
 
 
-class BrainSpace:
+class Zor:
     def __init__(self, layers):
         self.layers = layers
         self.accuracy_history = []
