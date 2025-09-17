@@ -11,7 +11,7 @@ Sections
 """
 
 from zor import Zor, Layer
-from activation_functions import sigmoid
+from activation_functions import *
 import numpy as np
 import torch
 from keras.datasets import cifar10  # type: ignore
@@ -19,7 +19,7 @@ import time
 import matplotlib.pyplot as plt
 
 # Setup device for MPS (Metal Performance Shaders) on Mac
-device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+device = "mps"
 print(f"Using device: {device}")
 
 def psnr(y_true, y_pred, eps=1e-8):
@@ -129,9 +129,10 @@ def simple_plot(snn, X_val_samples=None):
     plt.pause(0.01)
 # Load and prepare data
 (X_train, _), (X_test, _) = cifar10.load_data()
-pool_size = 300
+pool_size = 500
 eval_size = 500
-active_size = 50
+active_size = 500
+base_accuracy = .89
 
 # Use train set for training pool, test set for evaluation
 X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float32, device=device)
@@ -140,43 +141,60 @@ X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float32
 X_pool = X_train_full[:pool_size]
 X_eval = X_test_full[:eval_size]  # Use test set for evaluation
 X_val_samples = X_test_full[:10]  # Fixed 10 validation samples for plotting
-X_candidates = X_pool[active_size:]  # Rest of pool are candidates
-if len(X_candidates) > 0:
-    perm = torch.randperm(len(X_candidates), device=device)
-    X_candidates = X_candidates[perm]
+X_candidates = None  # Simplified: no candidate pool needed
+max_weight = 3
 
+# Training completed in 80.5s! (max 1)
+# Final train reconstruction: 92.7%
+# Final validation reconstruction: 81.5%
+# Final validation MAE: 0.1854
+# Final validation PSNR: 12.39 dB
+# Final forgotten images reconstruction: 81.0%
 # Initialize network
-
+# max 0.1
+# Training completed in 93.7s!
+# Final train reconstruction: 85.0%
+# Final validation reconstruction: 83.9%
+# Final validation MAE: 0.1610
+# Final validation PSNR: 14.09 dB
+# Layer 0 activation: 0.901 (target: 0.9)
+# Layer 1 activation: 0.152 (target: 0.6)
+# Layer 2 activation: 0.454 (target: 1)
+lr = .02
+momentum = .9 # 95 had 14.94
 snn = Zor([
     Layer(
         3072,
-        target_activation=.9,
+        target_activation=.8,
         activation_function=None,
-        learning_range=.05,
-        activation_rate=0.2,
-        novelty_factor=-.2,
-        universal_rolling_factor=.9,
-        device=device
+        learning_range=lr,
+        activation_rate=0,
+        universal_rolling_factor=.3,
+        device=device,
+        max_weight=max_weight,
+        momentum_factor=momentum
     ),
     Layer(
-        512,
-        target_activation=.5,
-        activation_function=None,
-        learning_range=.05,  
-        activation_rate=0.2,
-        novelty_factor=-.2,
-        universal_rolling_factor=.9,
-        device=device
+        728,
+        target_activation=.8,
+        activation_function= None,
+        learning_range=lr,  
+        activation_rate=0,
+        universal_rolling_factor=.3,
+        device=device,
+        max_weight=max_weight,
+        momentum_factor=momentum
     ),
     Layer(
         3072,
-        target_activation=.5,
-        activation_function=sigmoid,
-        learning_range=.05,
-        activation_rate=0.2,
-        novelty_factor=-.2,
-        universal_rolling_factor=.9,
-        device=device
+        target_activation=1,
+        activation_function=None,
+        learning_range=lr,
+        activation_rate=0,
+        universal_rolling_factor=.3,
+        device=device,
+        max_weight=max_weight,
+        momentum_factor=momentum
     )
 ])
 
@@ -196,8 +214,8 @@ print(f"Total parameters: {_param_count(snn.layers):,}")
 
 
 # Training setup
-batch_size = 10
-total_steps = 10000
+batch_size = active_size
+total_steps = 1500
 validation_interval = 25
 plot_interval = 10
 print_interval = 50
@@ -226,28 +244,18 @@ for step in range(total_steps):
     errors = batch - outputs
     train_accuracy = 100.0 * (1.0 - torch.mean(torch.abs(errors)))
     
-    # Backward pass
-    snn.reinforce(errors)
-    
-    # Track metrics
+    # Backward pass with amplified accuracy signal
+    acc = 1.0 - torch.mean(torch.abs(errors)).item()
+    amplified = 1 / (1 + np.exp(-12 * (acc - 0.85))) * 10
+    snn.reinforce(errors, amplified)
     snn.accuracy_history.append(train_accuracy)
     for j, layer in enumerate(snn.layers):
         snn.activation_history[j].append(float(torch.mean(layer.spikes)))
     snn.last_batch = batch
     snn.last_outputs = outputs
     
-    # Curriculum: replace only the most accurate image
-    if len(X_candidates) > 0:
-        per_sample_acc = torch.clamp(1.0 - torch.mean(torch.abs(errors), dim=1), 0, 1)
-        best_idx = torch.argmax(per_sample_acc)
-        if per_sample_acc[best_idx] > 0.91:  # Only replace if accuracy is high enough
-            # Track first 3 forgotten images
-            if len(forgotten_images) < 3:
-                forgotten_images.append(X_shuffled[batch_indices[best_idx]].clone().cpu())
-                print(f"Tracking forgotten image {len(forgotten_images)} at step {step}")
-            # print(f"Replacing sample {batch_indices[best_idx]} with candidate {cand_pos}")
-            X_shuffled[batch_indices[best_idx]] = X_candidates[cand_pos]
-            cand_pos = (cand_pos + 1) % len(X_candidates)
+    # Simplified curriculum: if active pool mean accuracy > 0.8, refresh active pool
+    # Forgotten images: first 3 with per-sample accuracy > 0.9 from the current active pool
     
     # Validation evaluation
     if step % validation_interval == 0:
@@ -271,6 +279,33 @@ for step in range(total_steps):
             for i in range(len(forgotten_images)):
                 forgotten_per_image_history[i].append(float(per_img_acc[i]))
                 forgotten_steps_history[i].append(step)
+
+        # Active pool evaluation and refresh condition
+        with torch.no_grad():
+            pool_outputs = snn.forward(X_shuffled, train=False)
+            pool_errors = torch.abs(X_shuffled - pool_outputs)
+            pool_acc_per_sample = 1.0 - torch.mean(pool_errors, dim=1)
+            pool_mean_acc = float(pool_acc_per_sample.mean()) * 100.0  # Convert to percentage
+            
+            # Refresh when gap between val and current batch accuracy exceeds threshold
+            acc_gap = abs(val_accuracy - pool_mean_acc)
+            refresh_threshold = 2.3  # 5% difference threshold
+            
+            if acc_gap > refresh_threshold:
+                # Track up to 3 forgotten images with accuracy > 0.9
+                if len(forgotten_images) < 3:
+                    high_acc_mask = pool_acc_per_sample > 0.93
+                    high_acc_indices = torch.nonzero(high_acc_mask, as_tuple=False).flatten()
+                    for idx in high_acc_indices:
+                        if len(forgotten_images) >= 3:
+                            break
+                        forgotten_images.append(X_shuffled[idx].clone().cpu())
+                        print(f"Tracking forgotten image {len(forgotten_images)} at step {step}")
+                # Refresh active pool
+                perm = torch.randperm(len(X_pool), device=device)[:active_size]
+                X_shuffled = X_pool[perm]
+                current_pos = 0
+                print(f"Refreshed active pool at step {step} (val: {val_accuracy:.1f}%, batch: {pool_mean_acc:.1f}%, gap: {acc_gap:.1f}%)")
     
     # Plotting and logging
     if step % plot_interval == 0:

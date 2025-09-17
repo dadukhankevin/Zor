@@ -36,6 +36,7 @@ class Layer:
         self.rolling_coactivation = torch.zeros((self.input_size, next_layer.input_size), device=self.device)
         self.momentum = torch.zeros_like(self.weights)
 
+    @torch.no_grad()
     def forward(self, x, train=True):
         if self.spikes.shape[0] != x.shape[0]:
             self.spikes = torch.zeros_like(x)
@@ -67,13 +68,13 @@ class Layer:
                 self.post_compute_spikes = outputs.clone()
             return outputs @ self.weights
         else:
-            final_outputs = self.activation_function(x) if self.activation_function else x
+            final_outputs = self.activation_function(x) if self.activation_function else spike_outputs
             if train:
-                post = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
-                self.post_compute_spikes = post.clone()
+                self.post_compute_spikes = final_outputs.clone()
             return final_outputs
 
 
+    @torch.no_grad()
     def reinforce(self, vector_reward, accuracy):
 
         batch_size = self.post_compute_spikes.shape[0]
@@ -98,10 +99,9 @@ class Layer:
                 gradient = gradient * (self.learning_range / gradient_norm)
 
             scale = max((1 - accuracy), float(self.min_accuracy_scale))
-            with torch.no_grad():
-                self.momentum = self.momentum_factor * self.momentum + gradient * scale
-                self.weights += self.momentum
-                self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
+            self.momentum = self.momentum_factor * self.momentum + gradient * scale
+            self.weights += self.momentum
+            self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
 
             return vector_reward @ old_weights.T
         return vector_reward
@@ -118,6 +118,7 @@ class Zor:
         for i in range(len(layers) - 1):
             layers[i].init_weights(layers[i + 1])
 
+    @torch.no_grad()
     def forward(self, input_data, train=True):
         x = input_data
         for layer in self.layers:
@@ -129,23 +130,26 @@ class Zor:
             rewards = layer.reinforce(rewards, accuracy)
         return rewards
     
+    @torch.no_grad()
     def train_batch(self, input_data, target_data):
         outputs = self.forward(input_data, train=True)
         errors = target_data - outputs
-        self.reinforce(errors)
+        accuracy = 1.0 - float(torch.mean(torch.abs(errors)))
+        self.reinforce(errors, accuracy)
         return errors
     
     def evaluate(self, validation_data, train=False):
         """Evaluate on validation data without affecting model parameters."""
-        # Store current spike states to restore later
-        original_spikes = [layer.spikes.clone() for layer in self.layers]
-        
-        outputs = self.forward(validation_data, train=False)
-        errors = validation_data - outputs
-        accuracy = 100.0 * (1.0 - float(torch.mean(torch.abs(errors))))
-        
-        # Restore original spike states (no learning occurred)
-        for i, layer in enumerate(self.layers):
-            layer.spikes = original_spikes[i]
-        
-        return accuracy
+        with torch.inference_mode():
+            # Store current spike states to restore later
+            original_spikes = [layer.spikes.clone() for layer in self.layers]
+            
+            outputs = self.forward(validation_data, train=False)
+            errors = validation_data - outputs
+            accuracy = 100.0 * (1.0 - float(torch.mean(torch.abs(errors))))
+            
+            # Restore original spike states (no learning occurred)
+            for i, layer in enumerate(self.layers):
+                layer.spikes = original_spikes[i]
+            
+            return accuracy
