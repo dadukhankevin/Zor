@@ -28,9 +28,6 @@ Zor operates on this philosophy:
 
 **Zor**: Zor does something *vaguely similar* to three-factor Hebbian learning, but is also quite different. Rather than looking merely at coactivity, Zor looks at *how* coactive neurons are, and it can do this because we use analog spiking rather than binary. This strengthens the signal enormously. Zor also "backpropagates" errors across the coactivity matrix, weighted by how novel the coactivity is between any two neurons. Unlike many alternatives to backpropagation, Zor can tell to what extent and in what direction each weight should change.
 
-## What's New Here
-
-While Zor builds on established concepts like three-factor learning rules and homeostatic plasticity, it combines them in a novel way:
 
 - **Analog-spike gating**: Binary spike decisions gate analog charges, which are then used directly in learning (not typical in SNNs)
 - **Subtractive novelty gating**: Familiarity penalties reduce eligibility rather than adding novelty bonuses
@@ -39,21 +36,17 @@ While Zor builds on established concepts like three-factor learning rules and ho
 
 ## Relation to prior work
 
-Zor builds on known ingredients but combines them differently:
+Zor takes some inspiration from several lines of work (three‑factor rules, local eligibility traces, layer‑local objectives, and feedback‑alignment‑style signals) but combines them differently, simply.
 
-- Three‑factor rules and reward‑modulated STDP typically use a global scalar modulatory signal (e.g., dopamine) multiplying pre/post activity; they do not propagate vector errors layer‑by‑layer. See e.g. Frémaux & Gerstner (review) [Frontiers](https://www.frontiersin.org/articles/10.3389/fncir.2015.00085/full).
-- e‑prop uses local eligibility traces with neuron‑wise learning signals to approximate BPTT in SNNs; it still separates eligibility from a broadcast learning signal. See Bellec et al. 2020 [Nature](https://www.nature.com/articles/s41586-020-2019-3).
-- DECOLLE applies continuous local losses with surrogate gradients at each layer (no explicit error propagation through weights). See Kaiser et al. 2019 [arXiv](https://arxiv.org/abs/1901.09049).
-- Feedback alignment propagates vector errors with fixed/random feedback matrices rather than exact transposes. See Lillicrap et al. 2016 [Nat. Comms](https://www.nature.com/articles/ncomms13276).
+What’s different here:
 
-How Zor differs:
+- Vector error per layer via the current forward weights’ transpose (no BPTT, no random feedback)
+- Analog‑spike gating: a binary spike gates the analog charge that actually learns
+- Subtractive novelty: an EMA co‑activation penalty that down‑weights familiar co‑activity
+- Per‑unit threshold homeostasis paired with a simple reconstruction‑based curriculum
+- Lots of other things in the code lol.
 
-- Uses a vector error per layer obtained by multiplying by the current forward weights’ transpose (no BPTT, no random feedback).
-- Learns with analog‑spike gating (binary spike decides passage of the analog charge) in both forward and eligibility terms.
-- Applies a subtractive novelty gate (EMA co‑activation penalty) rather than additive novelty bonuses.
-- Couples per‑unit threshold homeostasis with a simple reconstruction‑based curriculum.
-
-Net: overlaps in spirit with three‑factor/e‑prop/FA, but the specific mechanics and their integration here are, to our knowledge, uncommon.
+In short, it overlaps in spirit with prior ideas but the specific mechanics and their integration appear uncommon.
 
 ### Outputs
 
