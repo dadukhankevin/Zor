@@ -5,7 +5,8 @@ import torch.nn as nn
 class Layer:
     def __init__(self, input_size, target_activation, threshold=0, threshold_inhibition=0, 
                  activation_function=None, learning_range=0.001, activation_rate=0.1, 
-                 universal_rolling_factor=0.2, novelty_factor=0.01, max_weight=.2, device='cpu'):
+                 universal_rolling_factor=0.94, novelty_factor=0.01, max_weight=.2, device='cpu',
+                 momentum_factor=0.95, min_accuracy_scale=0.1):
         self.input_size = input_size
         self.device = device
         self.next_layer = None
@@ -25,12 +26,15 @@ class Layer:
         self.max_weight = max_weight
         self.novelty_factor = novelty_factor
         self.zero = torch.tensor(0.0, device=self.device)
+        self.momentum_factor = momentum_factor
+        self.min_accuracy_scale = min_accuracy_scale
 
     def init_weights(self, next_layer):
         self.next_layer = next_layer
         scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
         self.rolling_coactivation = torch.zeros((self.input_size, next_layer.input_size), device=self.device)
+        self.momentum = torch.zeros_like(self.weights)
 
     def forward(self, x, train=True):
         if self.spikes.shape[0] != x.shape[0]:
@@ -70,12 +74,13 @@ class Layer:
             return final_outputs
 
 
-    def reinforce(self, vector_reward):
+    def reinforce(self, vector_reward, accuracy):
+
         batch_size = self.post_compute_spikes.shape[0]
 
         per_unit_error = (self.target_activation - self.unit_rate_ema).to(torch.float32)
         self.thresholds -= self.activation_rate * per_unit_error
-        self.thresholds = torch.clamp(self.thresholds, 0, 2)
+        self.thresholds = torch.clamp(self.thresholds, 0, 3)
 
         if self.next_layer:
             old_weights = self.weights.clone()
@@ -91,9 +96,12 @@ class Layer:
             gradient_norm = torch.norm(gradient)
             if gradient_norm > 0 and gradient_norm > self.learning_range:
                 gradient = gradient * (self.learning_range / gradient_norm)
-            self.weights += gradient
 
-            self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
+            scale = max((1 - accuracy), float(self.min_accuracy_scale))
+            with torch.no_grad():
+                self.momentum = self.momentum_factor * self.momentum + gradient * scale
+                self.weights += self.momentum
+                self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
 
             return vector_reward @ old_weights.T
         return vector_reward
@@ -116,9 +124,9 @@ class Zor:
             x = layer.forward(x, train=train)
         return x
     
-    def reinforce(self, rewards):
+    def reinforce(self, rewards, accuracy):
         for layer in reversed(self.layers):
-            rewards = layer.reinforce(rewards)
+            rewards = layer.reinforce(rewards, accuracy)
         return rewards
     
     def train_batch(self, input_data, target_data):

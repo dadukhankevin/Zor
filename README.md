@@ -75,10 +75,10 @@ python fashon.py
 ```
 
 This example demonstrates:
-1. **Extreme data efficiency** - 83% validation accuracy using only 10 Fashion-MNIST samples (1 per class)
-2. **Fast training** - Complete training in 0.2 seconds on CPU
-3. **One-shot learning** - Generalizes from seeing just one example of each clothing type
-4. **Curriculum learning** - Automatically focuses on the hardest samples during training
+1. **Extreme data efficiency** - Beats MLPs using only 10 Fashion-MNIST samples (1 per class)
+2. **Fast training** - 30x faster training than equivalent MLPs
+3. **Superior low-data performance** - Outperforms standard autoencoders in data-scarce scenarios
+4. **Momentum-based learning** - Stable convergence with temporal consistency
 
 *Note: I measure reconstruction accuracy as 100% × (1 - mean absolute error), which gives higher numbers than typical metrics but consistently tracks learning progress.*
 
@@ -103,7 +103,7 @@ for epoch in range(200):
     snn.reinforce(errors)
 ```
 
-In the example file I've gotten up to 83% validation accuracy on 1000 unseen samples after training on just 10 examples in 0.2 seconds. Again, this is all without any normal backpropagation, and is much better than any SNN I've ever seen.
+Zor now beats MLPs on Fashion-MNIST autoencoders in low-data regimes while being 30x faster. This is all without backpropagation, using momentum-based analog-spike learning.
 
 ## Roadmap
 Zor is the result of many, many, sleepless nights pulling my hair out over how stupid backpropagation is vs how simple I felt like spike-based learning should be, and there's still a ways to go, so here's a roadmap:

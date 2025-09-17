@@ -10,9 +10,9 @@ SAMPLES_PER_CLASS = 1 # Set this to control how many examples per class
 
 # Create a simple 3-layer autoencoder
 snn = Zor([
-    Layer(784, target_activation=1, learning_range=.9, activation_rate=0.5, novelty_factor=-.99, activation_function=None),
-    Layer(128, target_activation=1, learning_range=1, activation_rate=0.5, novelty_factor=-.1, activation_function=None), 
-    Layer(784, target_activation=.2, activation_function=sigmoid, learning_range=1, activation_rate=.5, novelty_factor=-.1)
+    Layer(784, target_activation=1, learning_range=.7, activation_rate=.1, novelty_factor=.8, activation_function=leaky_relu),
+    Layer(54, target_activation=1, learning_range=.7, activation_rate=0.1, novelty_factor=0, activation_function=leaky_relu), 
+    Layer(784, target_activation=.5, activation_function=sigmoid, learning_range=1, activation_rate=.1, novelty_factor=0)
 ])
 
 if __name__ == "__main__":
@@ -28,30 +28,22 @@ if __name__ == "__main__":
     X_train_subset = torch.tensor(X_train[train_indices].reshape(-1, 784) / 255.0, dtype=torch.float32)
     X_val = torch.tensor(X_train[2000:3000].reshape(-1, 784) / 255.0, dtype=torch.float32)  # Validation set (1000 samples)
     
-    # Initialize per-sample error tracking for curriculum learning
-    sample_errors = torch.ones(len(X_train_subset))  # Start with equal probability
     
     # Train the autoencoder
     print("Training Zor autoencoder on Fashion-MNIST...")
     start_time = time.time()
-    for epoch in range(200):
-        # Curriculum-based batch sampling - select the worst performing samples
-        _, indices = torch.topk(sample_errors, min(50, len(X_train_subset)), largest=True)
+    for epoch in range(500):
+        # Simple random batch selection
+        indices = torch.randperm(len(X_train_subset))[:48]
         batch = X_train_subset[indices]
         
         # Forward pass and compute error
         outputs = snn.forward(batch)
         errors = batch - outputs
-        accuracy = 100.0 * (1.0 - torch.mean(torch.abs(errors)))
+        accuracy = 1.0 - torch.mean(torch.abs(errors)).item()
         
-        # Update per-sample error tracking
-        batch_errors = torch.mean(torch.abs(errors), dim=1)  # Error per sample in batch
-        for i, idx in enumerate(indices):
-            # Exponential moving average of sample errors (higher = harder)
-            sample_errors[idx] = 0.9 * sample_errors[idx] + 0.1 * batch_errors[i]
-        
-        # Learn from errors
-        snn.reinforce(errors)
+        # Learn from errors with accuracy scaling
+        snn.reinforce(errors, accuracy)
         
         if epoch % 50 == 0:
             print(f"Epoch {epoch}: {accuracy:.1f}% accuracy")
