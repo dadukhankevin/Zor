@@ -55,32 +55,17 @@ class Layer:
                 batch_rate * (1 - self.universal_rolling_factor)
             )
 
-        spike_mask = spikes > 0
-        spike_outputs = x * spikes
+        spike_outputs = torch.where(spikes > 0, x, self.zero)
 
         if self.next_layer:
-            outputs = spike_outputs
-            if self.activation_function and spike_mask.any():
-                outputs = torch.zeros_like(spike_outputs)
-                outputs[spike_mask] = self.activation_function(spike_outputs[spike_mask])
-            
+            outputs = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
             if train:
                 self.post_compute_spikes = outputs.clone()
-            
-            if not spike_mask.any():
-                return torch.zeros(x.shape[0], self.weights.shape[1], device=self.device)
-            
-            sparsity = 1.0 - float(spike_mask.sum()) / spike_mask.numel()
-            if sparsity > 0.8 and not train:
-                return torch.sparse.mm(outputs.to_sparse(), self.weights.T).T
             return outputs @ self.weights
         else:
             final_outputs = self.activation_function(x) if self.activation_function else x
             if train:
-                post = spike_outputs
-                if self.activation_function and spike_mask.any():
-                    post = torch.zeros_like(spike_outputs)
-                    post[spike_mask] = self.activation_function(spike_outputs[spike_mask])
+                post = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
                 self.post_compute_spikes = post.clone()
             return final_outputs
 
@@ -98,7 +83,7 @@ class Layer:
             elig = (self.post_compute_spikes.T @ self.next_layer.post_compute_spikes) / batch_size
             self.rolling_coactivation = self.rolling_coactivation * self.universal_rolling_factor + torch.abs(elig) * (1 - self.universal_rolling_factor)
 
-            elig = elig - (self.rolling_coactivation * self.novelty_factor)
+            elig = elig - (self.rolling_coactivation * self.novelty_factor) # 15.04
 
             elig = torch.clamp(elig, 0, 1)
             gradient = ((self.post_compute_spikes.T @ vector_reward) / batch_size) * elig
@@ -129,8 +114,6 @@ class Zor:
         x = input_data
         for layer in self.layers:
             x = layer.forward(x, train=train)
-            if not train and torch.all(x == 0):
-                break
         return x
     
     def reinforce(self, rewards):
@@ -145,12 +128,15 @@ class Zor:
         return errors
     
     def evaluate(self, validation_data, train=False):
+        """Evaluate on validation data without affecting model parameters."""
+        # Store current spike states to restore later
         original_spikes = [layer.spikes.clone() for layer in self.layers]
         
         outputs = self.forward(validation_data, train=False)
         errors = validation_data - outputs
         accuracy = 100.0 * (1.0 - float(torch.mean(torch.abs(errors))))
         
+        # Restore original spike states (no learning occurred)
         for i, layer in enumerate(self.layers):
             layer.spikes = original_spikes[i]
         
