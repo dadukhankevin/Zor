@@ -82,7 +82,7 @@ This example demonstrates:
 
 *Note: I measure reconstruction accuracy as 100% × (1 - mean absolute error), which gives higher numbers than typical metrics but consistently tracks learning progress.*
 
-The entire training loop is just 15 lines:
+A working version in just 15 lines, should get similar results.
 
 ```python
 from zor import Zor, Layer
@@ -103,12 +103,12 @@ for epoch in range(200):
     snn.reinforce(errors)
 ```
 
-The results speak for themselves: 83% validation accuracy on 1000 unseen samples after training on just 10 examples in 0.2 seconds. No backpropagation, no complex optimizers, no extensive hyperparameter tuning - just efficient one-shot learning with automatic curriculum adaptation.
+In the example file I've gotten up to 83% validation accuracy on 1000 unseen samples after training on just 10 examples in 0.2 seconds. Again, this is all without any normal backpropagation, and is much better than any SNN I've ever seen.
 
 ## Roadmap
 Zor is the result of many, many, sleepless nights pulling my hair out over how stupid backpropagation is vs how simple I felt like spike-based learning should be, and there's still a ways to go, so here's a roadmap:
 
-- GPU acceleration. I built Zor with the idea that we shouldn't need to use "neuromorphic chips" in order to benifit from spike based efficiency, so this is HIGH on the list.
+- GPU acceleration (DONE!). I built Zor with the idea that we shouldn't need to use "neuromorphic chips" in order to benifit from spike based efficiency, so this is HIGH on the list.
 - Saving/Loading. Save models, load them, etc... Plus efficient layer by layer laoding where we only load the parts of the network we need (benifit of sparsity). I hope this could make it possible to use very large models on very limited hardware.
 - Research: I made lots of headway on the learning mechanism (non-hebbian, and not-backprop). But I know there is a significant ways to go still.
 - Examples: I'll post more examples and code.
