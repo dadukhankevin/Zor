@@ -24,9 +24,36 @@ Zor operates on this philosophy:
 
 ### Learning
 
-**Normal**: SNNs often implement either "Hebbian" learning or "Backpropagation Through Time" (BTT). Hebbian learning strengthens connections between coactive neurons, but this often leads to runaway behaviour and requires complex homeostatic pressures that often suppress learning. BTT is terrible for many reasons, including that I generally think that backpropagation is not needed for learning (nothing in nature implements it, and "digiture" implements it poorly).
+**Normal**: SNNs often implement either "Hebbian" learning or "Backpropagation Through Time" (BTT). Hebbian learning strengthens connections between coactive neurons, but this often leads to runaway behaviour and requires complex homeostatic pressures that often suppress learning. BTT is terrible for many reasons, including that I generally think that backpropagation may not be needed for learning (nothing in nature implements it, and "digiture" implements it poorly).
 
 **Zor**: Zor does something *vaguely similar* to three-factor Hebbian learning, but is also quite different. Rather than looking merely at coactivity, Zor looks at *how* coactive neurons are, and it can do this because we use analog spiking rather than binary. This strengthens the signal enormously. Zor also "backpropagates" errors across the coactivity matrix, weighted by how novel the coactivity is between any two neurons. Unlike many alternatives to backpropagation, Zor can tell to what extent and in what direction each weight should change.
+
+## What's New Here
+
+While Zor builds on established concepts like three-factor learning rules and homeostatic plasticity, it combines them in a novel way:
+
+- **Analog-spike gating**: Binary spike decisions gate analog charges, which are then used directly in learning (not typical in SNNs)
+- **Subtractive novelty gating**: Familiarity penalties reduce eligibility rather than adding novelty bonuses
+- **Threshold homeostasis**: Direct target-rate control of sparsity during learning
+- **Reconstruction-based curriculum**: Sample replacement based on per-item reconstruction quality
+
+## Relation to prior work
+
+Zor builds on known ingredients but combines them differently:
+
+- Three‑factor rules and reward‑modulated STDP typically use a global scalar modulatory signal (e.g., dopamine) multiplying pre/post activity; they do not propagate vector errors layer‑by‑layer. See e.g. Frémaux & Gerstner (review) [Frontiers](https://www.frontiersin.org/articles/10.3389/fncir.2015.00085/full).
+- e‑prop uses local eligibility traces with neuron‑wise learning signals to approximate BPTT in SNNs; it still separates eligibility from a broadcast learning signal. See Bellec et al. 2020 [Nature](https://www.nature.com/articles/s41586-020-2019-3).
+- DECOLLE applies continuous local losses with surrogate gradients at each layer (no explicit error propagation through weights). See Kaiser et al. 2019 [arXiv](https://arxiv.org/abs/1901.09049).
+- Feedback alignment propagates vector errors with fixed/random feedback matrices rather than exact transposes. See Lillicrap et al. 2016 [Nat. Comms](https://www.nature.com/articles/ncomms13276).
+
+How Zor differs:
+
+- Uses a vector error per layer obtained by multiplying by the current forward weights’ transpose (no BPTT, no random feedback).
+- Learns with analog‑spike gating (binary spike decides passage of the analog charge) in both forward and eligibility terms.
+- Applies a subtractive novelty gate (EMA co‑activation penalty) rather than additive novelty bonuses.
+- Couples per‑unit threshold homeostasis with a simple reconstruction‑based curriculum.
+
+Net: overlaps in spirit with three‑factor/e‑prop/FA, but the specific mechanics and their integration here are, to our knowledge, uncommon.
 
 ### Outputs
 
