@@ -15,16 +15,20 @@ torch.manual_seed(42)
 random.seed(42)
 np.random.seed(42)
 
+# Set device to MPS if available
+device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+print(f"Using device: {device}")
+
 def psnr(y_true, y_pred, eps=1e-8):
     mse = np.mean((y_true - y_pred) ** 2)
     rmse = np.sqrt(mse + eps)
     return float(20.0 * np.log10(1.0 / (rmse + eps)))
 
 (X_train, _), (X_test, _) = cifar10.load_data()
-X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float32)
-X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float32)
+X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
+X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 
-POOL_SIZE = 5000
+POOL_SIZE = 1000
 EVAL_SIZE = 2000
 BATCH_SIZE = 512
 
@@ -37,9 +41,9 @@ X_eval = X_test_full[:EVAL_SIZE]
 
 
 snn = Zor([
-    Layer(3072, do_fitness=True, momentum_factor=0.92),
-    Layer(728, do_fitness=True, momentum_factor=0.89),
-    Layer(3072, do_fitness=False)
+    Layer(3072, do_fitness=True, momentum_factor=0.92, device=device),
+    Layer(728, do_fitness=True, momentum_factor=0.89, device=device),
+    Layer(3072, do_fitness=False, device=device)
 ])
 
 validation_psnr_history = []
@@ -64,7 +68,7 @@ for step in range(EPOCHS):
         batch = torch.cat([X_pool[start_idx:], X_pool[:end_idx - POOL_SIZE]], dim=0)
     
     errors = snn.train_batch(batch, batch)
-    snn.accuracy_history.append(100.0 * (1.0 - torch.mean(torch.abs(errors))))
+    snn.accuracy_history.append(100.0 * (1.0 - float(torch.mean(torch.abs(errors)))))
     
     if step % VALIDATION_INTERVAL == 0:
         val_accuracy = snn.evaluate(X_eval)
@@ -81,7 +85,7 @@ for step in range(EPOCHS):
 
 elapsed_time = time.time() - start_time
 print(f"\nTraining completed in {elapsed_time:.1f}s!")
-print(f"Final train reconstruction: {snn.accuracy_history[-1].item():.1f}%")
+print(f"Final train reconstruction: {snn.accuracy_history[-1]:.1f}%")
 print(f"Final validation reconstruction: {validation_accuracy_history[-1]:.1f}%")
 print(f"Final validation MAE: {validation_mae_history[-1]:.4f}")
 print(f"Final validation PSNR: {validation_psnr_history[-1]:.2f} dB")

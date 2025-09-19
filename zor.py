@@ -19,10 +19,10 @@ class Layer:
         self.post_compute_spikes = None
         self.learning_range = learning_range
         self.max_weight = max_weight
-        self.zero = torch.tensor(0.0, device=self.device)
         self.momentum_factor = momentum_factor
         self.do_fitness = do_fitness
         self.threshold = -math.inf
+        self.threshold_initialized = False
         self.accuracy_ema = None
         self.last_accuracy = None
         self.mutation_scale = mutation_scale
@@ -41,55 +41,89 @@ class Layer:
     
     @torch.no_grad()
     def forward(self, x, train=True):
-        if self.spikes.shape[0] != x.shape[0]:
-            self.spikes = torch.zeros_like(x)
-
-        spikes = (x > self.threshold).to(torch.float32)
+        x = x.float()  # Convert to float32 for numerical stability
         
-        if train:
-            self.spikes = spikes
-
-        spike_outputs = torch.where(spikes > 0 , x, self.zero)
-        if self.threshold == -math.inf:
-            self.threshold = spike_outputs.min() * .8
         if self.next_layer:
-            outputs = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
+            # Hidden layers need spike computation for gating
             if train:
-                self.post_compute_spikes = outputs.clone()
-            return outputs @ self.weights
+                # Only reallocate if batch size changed (more efficient check)
+                if self.spikes.shape[0] != x.shape[0]:
+                    self.spikes = torch.zeros_like(x)
+
+            # Efficient spike computation (boolean mask), keep compute dense for GEMM efficiency
+            spikes = (x > self.threshold)
+            if train:
+                self.spikes = spikes.float()
+
+            # Dense masked inputs (fast on accelerators)
+            spike_outputs = x * spikes.float()
+            
+            # Initialize threshold only once (only during training)
+            if train and not self.threshold_initialized and spike_outputs.numel() > 0:
+                self.threshold = spike_outputs.min() * 0.8
+                self.threshold_initialized = True
+                
+            if self.activation_function:
+                outputs = self.activation_function(spike_outputs)
+                if train:
+                    self.post_compute_spikes = outputs  # Remove redundant clone
+                return outputs @ self.weights
+            else:
+                if train:
+                    self.post_compute_spikes = spike_outputs  # Remove redundant clone
+                return spike_outputs @ self.weights
         else:
+            # Output layer - no spike computation needed during inference!
+            if not train:
+                # Pure inference: just apply activation function if present
+                return self.activation_function(x) if self.activation_function else x
+            
+            # Training: still need spike computation for learning
+            if self.spikes.shape[0] != x.shape[0]:
+                self.spikes = torch.zeros_like(x)
+                
+            spikes = (x > self.threshold).float()
+            self.spikes = spikes
+            spike_outputs = x * spikes
+            
+            if not self.threshold_initialized and spike_outputs.numel() > 0:
+                self.threshold = spike_outputs.min() * 0.8
+                self.threshold_initialized = True
+                
             final_outputs = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
-            if train:
-                self.post_compute_spikes = final_outputs.clone()
+            self.post_compute_spikes = final_outputs  # Remove redundant clone
             return final_outputs
 
 
     @torch.no_grad()
     def reinforce(self, signal, accuracy):
-        signal = signal
         batch_size = self.post_compute_spikes.shape[0]
 
         if self.next_layer:
+            # Cache sparsity calculation for efficiency
             next_layer_sparsity = 1.0 - (self.next_layer.post_compute_spikes > self.next_layer.threshold).float().mean()
 
-            old_weights = self.weights.clone()
+            # Compute next signal before updating weights to avoid expensive clone
+            next_signal = signal @ self.weights.T
 
             elig = (self.post_compute_spikes.T @ self.next_layer.post_compute_spikes) / batch_size
-            elig = elig * old_weights
+            elig = elig * self.weights
             if self.do_fitness:
                 batch_reward = signal.mean(dim=0, keepdim=True) 
                 update = elig * next_layer_sparsity * batch_reward
                 self.fitness += update #* accuracy
-                norm = torch.norm(torch.abs(self.fitness), dim=0, keepdim=True) + 1e-8
+                # Combine abs() and norm operations for efficiency
+                fitness_abs = torch.abs(self.fitness)
+                norm = torch.norm(fitness_abs, dim=0, keepdim=True) + 1e-8
                 self.fitness = self.fitness / norm
 
                 # Not sure if this works but I like the concept lol
                 if self.mutation_scale > 0:
-                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * self.fitness.abs()
+                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * fitness_abs
 
 
 
-            elig = torch.clamp(elig, 0, math.inf)
+            elig = torch.relu(elig)  # More efficient than clamp(0, math.inf)
             gradient = ((self.post_compute_spikes.T @ signal) / batch_size) * elig
 
             gradient_norm = torch.norm(gradient)
@@ -99,10 +133,10 @@ class Layer:
             scale = (1-accuracy)
             self.momentum = self.momentum_factor * self.momentum + gradient * scale
 
-            fitness = torch.clamp(self.fitness, 0, math.inf)
+            fitness = torch.relu(self.fitness)  # More efficient than clamp(0, math.inf)
             self.weights += self.momentum * (1-fitness) * (1 + 0.01 * (self.momentum < 0).float())
             self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
-            return signal @ old_weights.T
+            return next_signal
         return signal
 
 
@@ -162,5 +196,10 @@ class Zor:
             return accuracy
     
     def plot_accuracy(self):
-        plt.plot(self.accuracy_history)
+        # Convert to CPU for matplotlib
+        if isinstance(self.accuracy_history[0], torch.Tensor):
+            history = [x.cpu() if hasattr(x, 'cpu') else x for x in self.accuracy_history]
+        else:
+            history = self.accuracy_history
+        plt.plot(history)
         plt.show()
