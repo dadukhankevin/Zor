@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 import math
+from activation_functions import sigmoid
+import matplotlib.pyplot as plt
 
 class Layer:
     def __init__(self, input_size, 
-                 activation_function=None, learning_range=0.1, 
-                 max_weight=1, device='cpu',
-                 momentum_factor=0.9, min_accuracy_scale=0.01, do_solidity=False):
+                 activation_function=None, learning_range=0.28, 
+                 max_weight=2, device='cpu',
+                 momentum_factor=0.75, do_fitness=False, mutation_scale=0):
         self.input_size = input_size
         self.device = device
         self.next_layer = None
@@ -18,16 +20,19 @@ class Layer:
         self.max_weight = max_weight
         self.zero = torch.tensor(0.0, device=self.device)
         self.momentum_factor = momentum_factor
-        self.min_accuracy_scale = min_accuracy_scale
-        self.do_solidity = do_solidity
+        self.do_fitness = do_fitness
         self.threshold = -math.inf
-
+        self.accuracy_ema = None
+        self.last_accuracy = None
+        self.mutation_scale = mutation_scale
     def init_weights(self, next_layer):
         self.next_layer = next_layer
         scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
         self.momentum = torch.zeros_like(self.weights)
-        self.solidity = torch.zeros_like(self.weights)
+        self.fitness = torch.zeros_like(self.weights)
+
+        
     
     def get_activation(self):
         return (self.spikes > 0).float().mean()  # Use spikes, not post_compute_spikes
@@ -59,8 +64,8 @@ class Layer:
 
 
     @torch.no_grad()
-    def reinforce(self, vector_reward, accuracy):
-        
+    def reinforce(self, signal, accuracy):
+        signal = signal
         batch_size = self.post_compute_spikes.shape[0]
 
         if self.next_layer:
@@ -70,35 +75,37 @@ class Layer:
 
             elig = (self.post_compute_spikes.T @ self.next_layer.post_compute_spikes) / batch_size
 
-            if self.do_solidity:
-                batch_reward = vector_reward.mean(dim=0, keepdim=True) 
+            if self.do_fitness:
+                batch_reward = signal.mean(dim=0, keepdim=True) 
                 update =  elig * next_layer_sparsity * batch_reward
                 update = update - update.mean()
 
-                self.solidity += update #* accuracy
-                norm = torch.norm(torch.abs(self.solidity), dim=0, keepdim=True) + 1e-8
-                self.solidity = self.solidity / norm
+                self.fitness += update #* accuracy
+                norm = torch.norm(torch.abs(self.fitness), dim=0, keepdim=True) + 1e-8
+                self.fitness = self.fitness / norm
 
+                # Not sure if this works but I like the concept lol
+                if self.mutation_scale > 0:
+                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * self.fitness.abs()
 
 
 
             elig = torch.clamp(elig, 0, math.inf)
-            gradient = ((self.post_compute_spikes.T @ vector_reward) / batch_size) * elig
+            gradient = ((self.post_compute_spikes.T @ signal) / batch_size) * elig
 
             gradient_norm = torch.norm(gradient)
             if gradient_norm > 0 and gradient_norm > self.learning_range:
                 gradient = gradient * (self.learning_range / gradient_norm)
 
-            # scale = max(1 - accuracy, self.min_accuracy_scale)
-            scale = max(1.0 / (1 + 2 * accuracy), self.min_accuracy_scale)
+            scale = (1-accuracy)
             self.momentum = self.momentum_factor * self.momentum + gradient * scale
 
-            solidity = torch.clamp(self.solidity, 0, math.inf)
-            self.weights += self.momentum * (1-solidity) * (1 + 0.01 * (self.momentum < 0).float())
+            fitness = torch.clamp(self.fitness, 0, math.inf)
+            self.weights += self.momentum * (1-fitness) * (1 + 0.01 * (self.momentum < 0).float())
             self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
-            
-            return vector_reward @ old_weights.T
-        return vector_reward
+
+            return signal @ old_weights.T
+        return signal
 
 
 
@@ -135,6 +142,7 @@ class Zor:
         outputs = self.forward(input_data, train=True)
         errors = target_data - outputs
         accuracy = 1.0 - float(torch.mean(torch.abs(errors)))
+        self.accuracy_history.append(accuracy)
         self.reinforce(errors, accuracy)
         return errors
     
@@ -154,3 +162,7 @@ class Zor:
                 layer.spikes = original_spikes[i]
             
             return accuracy
+    
+    def plot_accuracy(self):
+        plt.plot(self.accuracy_history)
+        plt.show()
