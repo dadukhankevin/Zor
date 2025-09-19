@@ -160,7 +160,7 @@ max_weight = 3
 # Layer 0 activation: 0.901 (target: 0.9)
 # Layer 1 activation: 0.152 (target: 0.6)
 # Layer 2 activation: 0.454 (target: 1)
-lr = .1
+lr = .01
 momentum = .9 # 95 had 14.94
 snn = Zor([
     Layer(

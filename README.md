@@ -2,7 +2,18 @@
 
 Zor is a lightweight spiking neural network that uses **analog-spike gating** - binary spike decisions control information flow, while learning operates on the continuous analog values that pass through. This combines the computational efficiency of sparse spiking with the rich gradients needed for effective learning.
 
-Zor beats MLPs in low-data scenarios while being 30x faster.
+
+## Performance
+
+Zor consistently outperforms traditional MLPs across all data scales I've tried while maintaining learned sparsity:
+
+| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time |
+|--------------|-------------|-------------|----------|----------|----------|----------|
+| 64 images    | **88.1%**   | 86.5%       | **16.17dB** | 15.34dB | **52.4s** | 65.0s |
+| 1000 images  | **91.8%**   | 90.9%       | **19.10dB** | 18.66dB | **84.3s** | 86.0s |
+| 5000 images  | **90.4%**   | 89.5%       | **17.84dB** | 17.38dB | **20.8s** | 27.8s |
+
+Zor uses a novel learning rule without derivatives, achieving better generalization with smaller train/validation gaps. See [detailed test results](examples/readme.md).
 
 ## Quick Example
 
@@ -103,10 +114,12 @@ Zor operates on this philosophy:
 
 ## Relation to prior work
 
-Zor takes some inspiration from several lines of work (three‑factor rules, local eligibility traces, layer‑local objectives, and feedback‑alignment‑style signals) but combines them differently, simply.
+Zor takes some inspiration from several lines of work (three‑factor rules, local eligibility traces, layer‑local objectives, and feedback‑alignment‑style signals) but combines them differently, and adds new evolutionary concepts like fitness to weights as well as many other things. 
 
-What’s different here:
+How Zor is different:
 
+- It works, and is competitive not only with Spiking Neural Nets but also with MLP.
+- Unlike many spiking nets, Zor does not need spiking to learn, rather it learns spiking as a way to increase efficiency. At the start of training all neurons spike every time.
 - Vector error per layer via the current forward weights’ transpose (no BPTT, no random feedback)
 - Analog‑spike gating: a binary spike gates the analog charge that actually learns
 - Subtractive novelty: an EMA co‑activation penalty that down‑weights familiar co‑activity
