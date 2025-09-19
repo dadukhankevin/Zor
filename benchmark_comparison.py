@@ -123,9 +123,9 @@ class MLPAutoencoder(nn.Module):
 def create_zor_model(input_size, bottleneck_size, device):
     """Create Zor model with specified architecture"""
     return Zor([
-        Layer(input_size, do_fitness=True, momentum_factor=0.92, device=device),
-        Layer(bottleneck_size, do_fitness=True, momentum_factor=0.89, device=device),
-        Layer(input_size, do_fitness=False, device=device)
+        Layer(input_size, device=device),
+        Layer(bottleneck_size, device=device),
+        Layer(input_size, device=device)
     ])
 
 def run_zor_benchmark(X_pool, X_eval, config, epochs, device):

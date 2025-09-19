@@ -41,9 +41,9 @@ X_pool = X_train_full[:POOL_SIZE]
 X_eval = X_test_full[:EVAL_SIZE]
 
 snn = Zor([
-    Layer(3072, do_fitness=True, device=device, update_vectors_every=2),
-    Layer(728, do_fitness=True, device=device, update_vectors_every=2),
-    Layer(3072, do_fitness=False, device=device, update_vectors_every=1000)
+    Layer(3072, device=device, update_vectors_every=2),
+    Layer(728, device=device, update_vectors_every=2),
+    Layer(3072, device=device, update_vectors_every=1000)
 ], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
 
 validation_psnr_history = []

@@ -7,15 +7,15 @@ import matplotlib.pyplot as plt
 #16 = 300
 class Layer:
     def __init__(self, input_size, 
-                 activation_function=None, learning_range=1,
+                 activation_function=None, learning_range=0.7,
                  max_weight=100, device='cpu',
-                 do_fitness=True, mutation_scale=0, update_vectors_every=1,
+                 mutation_scale=0, update_vectors_every=1, # mutation_scale seems to do nothing
                  optimizer_class=None, optimizer_kwargs=None,
                  # New optimizer/modulation knobs
-                 neg_boost=0.01, fitness_freeze_threshold=None, fitness_shrink=0.9,
-                 clip_grad_norm=None, clip_grad_value=None,
+                 neg_boost=0.15,
+                 clip_grad_norm=None, clip_grad_value=None, # t
                  enable_weight_clamp=True,
-                 accuracy_gamma=1, reward_baseline_beta=0.9,
+                 accuracy_gamma=0.3, reward_baseline_beta=0.3,
                  enable_reward_baseline=True):
         self.input_size = input_size
         self.device = device
@@ -26,7 +26,6 @@ class Layer:
         self.post_compute_spikes = None
         self.learning_range = learning_range
         self.max_weight = max_weight
-        self.do_fitness = do_fitness
         self.threshold = -math.inf
         self.threshold_initialized = False
         self.iteration = 0
@@ -46,14 +45,12 @@ class Layer:
 
         # Modulation/regularization configuration
         self.neg_boost = neg_boost
-        self.fitness_freeze_threshold = fitness_freeze_threshold
-        self.fitness_shrink = fitness_shrink
         self.clip_grad_norm = clip_grad_norm
         self.clip_grad_value = clip_grad_value
         self.enable_weight_clamp = enable_weight_clamp
         self.accuracy_gamma = accuracy_gamma
         self.reward_baseline_beta = reward_baseline_beta
-        self.reward_baseline = None
+        self.reward_baseline = None # this set to 1 seemed to do nothing
         self.enable_reward_baseline = enable_reward_baseline
 
     def init_weights(self, next_layer):
@@ -61,7 +58,6 @@ class Layer:
         scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
         self.weights.requires_grad_(True)  # Enable gradients for PyTorch optimizer
-        self.fitness = torch.zeros_like(self.weights)
         # Initialize reward baseline (EMA) matching the outgoing dimension
         self.reward_baseline = torch.zeros((1, next_layer.input_size), device=self.device)
         
@@ -69,16 +65,9 @@ class Layer:
         self.optimizer = self.optimizer_class([self.weights], **self.optimizer_kwargs)
 
     def _apply_optimizer_update(self, scaled_gradient):
-        """Apply PyTorch optimizer update with fitness modulation and safety features."""
-        fitness = torch.relu(self.fitness)
-        
-        # Apply fitness modulation to gradient
-        modulated_gradient = scaled_gradient * (1 - fitness) * (1 + self.neg_boost * (scaled_gradient < 0).float())
-
-        # Optionally shrink updates where fitness is high (progressive freezing)
-        if self.fitness_freeze_threshold is not None:
-            mask = (fitness > self.fitness_freeze_threshold).float()
-            modulated_gradient = modulated_gradient * (1 - self.fitness_shrink * mask)
+        """Apply PyTorch optimizer update with safety features (no fitness modulation)."""
+        # Apply optional negative boost, independent of fitness
+        modulated_gradient = scaled_gradient  * (1 + self.neg_boost * (scaled_gradient < 0).float())
 
         # PyTorch optimizers perform gradient descent: w -= lr * grad
         # Our reinforce logic computes a direction to INCREASE weights, so negate here
@@ -169,16 +158,6 @@ class Layer:
 
             elig = (self.post_compute_spikes.T @ self.next_layer.post_compute_spikes) / batch_size
             elig = elig * self.weights
-            if self.do_fitness:
-                batch_reward = signal.mean(dim=0, keepdim=True) 
-                update = elig * next_layer_sparsity * batch_reward
-                self.fitness += update #* accuracy
-                # Hardsigmoid normalization - even faster than sigmoid!
-                self.fitness = torch.nn.functional.hardsigmoid(self.fitness)
-
-                # Not sure if this works but I like the concept lol
-                if self.mutation_scale > 0:
-                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * self.fitness
 
 
 
