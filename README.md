@@ -5,27 +5,27 @@ Zor is a lightweight spiking neural network that uses **analog-spike gating** - 
 
 ## Performance
 
-Zor consistently outperforms traditional MLPs across all data scales while achieving near-identical inference speeds:
+Zor consistently outperforms traditional MLPs across all data scales while achieving near-identical inference speeds. Both models use Adam optimizers (lr=0.001) for fair comparison:
 
 ### Training Performance (450 epochs)
 | Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
 |--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **87.8%**   | 85.3%       | **15.95dB** | 14.51dB | 5.6s     | 3.3s     | 1.3ms   | 1.2ms   |
-| 1000 images  | **89.9%**   | 89.1%       | **17.48dB** | 17.01dB | 7.8s     | 6.4s     | 1.3ms   | 1.2ms   |
-| 5000 images  | **90.5%**   | 89.1%       | **17.92dB** | 17.03dB | 7.4s     | 6.1s     | 1.3ms   | 1.2ms   |
+| 64 images    | **89.1%**   | 85.6%       | **16.86dB** | 14.74dB | 5.7s     | 3.2s     | 1.3ms   | 1.2ms   |
+| 1000 images  | **91.7%**   | 89.2%       | **18.99dB** | 17.11dB | 9.3s     | 8.2s     | 1.5ms   | 1.3ms   |
+| 5000 images  | **92.5%**   | 89.3%       | **19.73dB** | 17.19dB | 7.8s     | 6.5s     | 1.3ms   | 1.2ms   |
 
 ### Extended Training Performance (1000 epochs)  
 | Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
 |--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **88.0%**   | 85.3%       | **16.11dB** | 14.51dB | 12.3s    | 7.9s     | 1.3ms   | 1.2ms   |
-| 1000 images  | **90.6%**   | 90.2%       | **18.07dB** | 17.91dB | 18.2s    | 14.2s    | 1.3ms   | 1.2ms   |
-| 5000 images  | **91.2%**   | 91.3%       | 18.54dB    | **18.79dB** | 17.1s    | 13.4s    | 1.3ms   | 1.2ms   |
+| 64 images    | **89.1%**   | 85.8%       | **16.85dB** | 14.88dB | 13.5s    | 7.2s     | 1.3ms   | 1.2ms   |
+| 1000 images  | **93.1%**   | 90.3%       | **20.51dB** | 18.03dB | 20.0s    | 15.5s    | 1.3ms   | 1.2ms   |
+| 5000 images  | **92.8%**   | 90.7%       | **20.22dB** | 18.35dB | 18.7s    | 13.3s    | 1.3ms   | 1.2ms   |
 
 **Key Insights:**
-- **Better Accuracy**: Zor consistently achieves higher validation accuracy, especially on smaller datasets
-- **Competitive Training Speed**: Training is 18-40% slower but delivers superior results  
-- **Identical Inference Speed**: Forward pass times are nearly identical (1.3ms vs 1.2ms)
-- **No Backpropagation**: Achieves these results using novel momentum-based analog-spike learning
+- **Superior Accuracy**: Zor achieves 2-4% higher validation accuracy across all datasets
+- **Exceptional Reconstruction Quality**: 1.5-2.5dB PSNR improvement (20+ dB at scale)
+- **Competitive Speed**: Forward pass times are nearly identical (1.3ms vs 1.2ms)  
+- **No Backpropagation**: Achieves these results using novel Adam-optimized analog-spike learning
 
 Zor uses a novel learning rule without derivatives, achieving better generalization with smaller train/validation gaps. See [detailed test results](examples/readme.md).
 
@@ -33,6 +33,7 @@ Zor uses a novel learning rule without derivatives, achieving better generalizat
 
 ```python
 import torch
+import torch.optim as optim
 import time
 from activation_functions import *
 from zor import Zor, Layer
@@ -43,7 +44,7 @@ snn = Zor([
     Layer(784),
     Layer(64), 
     Layer(784)
-])
+], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
 
 (X_train, y_train), (X_test, _) = load_data()
 
@@ -74,7 +75,7 @@ val_accuracy = 100.0 * (1.0 - torch.mean(torch.abs(val_errors)))
 print(f"Validation accuracy: {val_accuracy:.1f}%")
 ```
 
-**Results**: Beats MLPs using only 10 training samples (1 per class) while being 30x faster. This is all without backpropagation, using momentum-based analog-spike learning.
+**Results**: Beats MLPs using only 10 training samples (1 per class) while being 30x faster. This is all without backpropagation, using Adam-optimized analog-spike learning.
 
 ## Philosophy
 

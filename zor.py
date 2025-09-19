@@ -9,7 +9,8 @@ class Layer:
     def __init__(self, input_size, 
                  activation_function=None, learning_range=1,
                  max_weight=100, device='cpu',
-                 momentum_factor=0.87, do_fitness=True, mutation_scale=0):
+                 do_fitness=True, mutation_scale=0, update_vectors_every=1,
+                 optimizer_class=None, optimizer_kwargs=None):
         self.input_size = input_size
         self.device = device
         self.next_layer = None
@@ -19,21 +20,44 @@ class Layer:
         self.post_compute_spikes = None
         self.learning_range = learning_range
         self.max_weight = max_weight
-        self.momentum_factor = momentum_factor
         self.do_fitness = do_fitness
         self.threshold = -math.inf
         self.threshold_initialized = False
+        self.iteration = 0
         self.accuracy_ema = None
         self.last_accuracy = None
         self.mutation_scale = mutation_scale
+        self.update_vectors_every = update_vectors_every
+        
+        # Store optimizer configuration for later initialization
+        self.optimizer_class = optimizer_class or torch.optim.Adam
+        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001}
+        self.optimizer = None  # Will be initialized when weights are created 
+
     def init_weights(self, next_layer):
         self.next_layer = next_layer
         scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
-        self.momentum = torch.zeros_like(self.weights)
+        self.weights.requires_grad_(True)  # Enable gradients for PyTorch optimizer
         self.fitness = torch.zeros_like(self.weights)
-
         
+        # Initialize PyTorch optimizer
+        self.optimizer = self.optimizer_class([self.weights], **self.optimizer_kwargs)
+
+    def _apply_optimizer_update(self, scaled_gradient):
+        """Apply PyTorch optimizer update with fitness modulation"""
+        fitness = torch.relu(self.fitness)
+        
+        # Apply fitness modulation to gradient
+        modulated_gradient = scaled_gradient * (1-fitness) * (1 + 0.01 * (scaled_gradient < 0).float())
+        # PyTorch optimizers perform gradient descent: w -= lr * grad
+        # Our reinforce logic computes a direction to INCREASE weights, so negate here
+        modulated_gradient = -modulated_gradient
+        
+        # Set gradient and step
+        self.optimizer.zero_grad()
+        self.weights.grad = modulated_gradient
+        self.optimizer.step()
     
     def get_activation(self):
         return (self.spikes > 0).float().mean()  # Use spikes, not post_compute_spikes
@@ -98,6 +122,7 @@ class Layer:
     @torch.no_grad()
     def reinforce(self, signal, accuracy):
         batch_size = self.post_compute_spikes.shape[0]
+        self.iteration += 1
 
         if self.next_layer:
             # Cache sparsity calculation for efficiency
@@ -112,14 +137,12 @@ class Layer:
                 batch_reward = signal.mean(dim=0, keepdim=True) 
                 update = elig * next_layer_sparsity * batch_reward
                 self.fitness += update #* accuracy
-                # Combine abs() and norm operations for efficiency
-                fitness_abs = torch.abs(self.fitness)
-                norm = torch.norm(fitness_abs, dim=0, keepdim=True) + 1e-8
-                self.fitness = self.fitness / norm
+                # Hardsigmoid normalization - even faster than sigmoid!
+                self.fitness = torch.nn.functional.hardsigmoid(self.fitness)
 
                 # Not sure if this works but I like the concept lol
                 if self.mutation_scale > 0:
-                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * fitness_abs
+                    self.weights += self.mutation_scale * torch.randn_like(self.weights) * self.fitness
 
 
 
@@ -127,15 +150,17 @@ class Layer:
             gradient = ((self.post_compute_spikes.T @ signal) / batch_size) * elig
 
             gradient_norm = torch.norm(gradient)
-            if gradient_norm > 0 and gradient_norm > self.learning_range:
-                gradient = gradient * (self.learning_range / gradient_norm)
+            if gradient_norm > self.learning_range:
+                gradient *= (self.learning_range / gradient_norm)
 
             scale = (1-accuracy)
-            self.momentum = self.momentum_factor * self.momentum + gradient * scale
-
-            fitness = torch.relu(self.fitness)  # More efficient than clamp(0, math.inf)
-            self.weights += self.momentum * (1-fitness) * (1 + 0.01 * (self.momentum < 0).float())
-            self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
+            scaled_gradient = gradient * scale
+            
+            # Apply optimizer update using the new unified system
+            self._apply_optimizer_update(scaled_gradient)
+            
+            # In-place clamp to preserve the optimizer's Parameter reference
+            self.weights.clamp_(-self.max_weight, self.max_weight)
             return next_signal
         return signal
 
@@ -143,8 +168,17 @@ class Layer:
 
 
 class Zor:
-    def __init__(self, layers):
+    def __init__(self, layers, optimizer_class=None, optimizer_kwargs=None):
         self.layers = layers
+        self.optimizer_class = optimizer_class or torch.optim.Adam
+        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001}
+        
+        # Apply optimizer settings to all layers that don't already have custom optimizers
+        for layer in layers:
+            if layer.optimizer_class == torch.optim.Adam and layer.optimizer_kwargs == {'lr': 0.001}:
+                # Layer is using defaults, apply Zor-level optimizer settings
+                layer.optimizer_class = self.optimizer_class
+                layer.optimizer_kwargs = self.optimizer_kwargs.copy()
         self.accuracy_history = []
         self.activation_history = [[] for _ in range(len(layers))]
         self.last_batch = None
