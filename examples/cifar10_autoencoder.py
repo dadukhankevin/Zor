@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from zor import Zor, Layer
 from activation_functions import *
 import torch
+import torch.optim as optim
 from keras.datasets import cifar10
 import time
 import matplotlib.pyplot as plt
@@ -28,23 +29,22 @@ def psnr(y_true, y_pred, eps=1e-8):
 X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 
-POOL_SIZE = 1000
+POOL_SIZE = 500
 EVAL_SIZE = 2000
 BATCH_SIZE = 512
 
-EPOCHS = 450
+EPOCHS = 1000
 VALIDATION_INTERVAL = 25
 PRINT_INTERVAL = 50
 
 X_pool = X_train_full[:POOL_SIZE]
 X_eval = X_test_full[:EVAL_SIZE]
 
-
 snn = Zor([
-    Layer(3072, do_fitness=True, momentum_factor=0.92, device=device),
-    Layer(728, do_fitness=True, momentum_factor=0.89, device=device),
-    Layer(3072, do_fitness=False, device=device)
-])
+    Layer(3072, do_fitness=True, device=device, update_vectors_every=2),
+    Layer(728, do_fitness=True, device=device, update_vectors_every=2),
+    Layer(3072, do_fitness=False, device=device, update_vectors_every=1000)
+], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
 
 validation_psnr_history = []
 validation_mae_history = []
