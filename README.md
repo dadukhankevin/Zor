@@ -20,27 +20,19 @@ Zor uses a novel learning rule without derivatives, achieving better generalizat
 ```python
 import torch
 import time
-from activation_functions import leaky_relu, sigmoid
+from activation_functions import *
 from zor import Zor, Layer
 from keras.datasets.fashion_mnist import load_data
 
-# Configuration
-SAMPLES_PER_CLASS = 1  # Only 1 example per class!
-
-# Create a simple 3-layer autoencoder
+SAMPLES_PER_CLASS = 2
 snn = Zor([
-    Layer(784, target_activation=1, learning_range=.7, activation_rate=.1, 
-          novelty_factor=.8, activation_function=leaky_relu),
-    Layer(54, target_activation=1, learning_range=.7, activation_rate=0.1, 
-          novelty_factor=0, activation_function=leaky_relu), 
-    Layer(784, target_activation=.5, activation_function=sigmoid, 
-          learning_range=1, activation_rate=.1, novelty_factor=0)
+    Layer(784),
+    Layer(64), 
+    Layer(784)
 ])
 
-# Load and prepare data
-(X_train, y_train), _ = load_data()
+(X_train, y_train), (X_test, _) = load_data()
 
-# Select just 1 example from each of the 10 Fashion-MNIST classes
 train_indices = []
 for class_id in range(10):
     class_indices = torch.where(torch.tensor(y_train) == class_id)[0][:SAMPLES_PER_CLASS]
@@ -49,21 +41,12 @@ for class_id in range(10):
 X_train_subset = torch.tensor(X_train[train_indices].reshape(-1, 784) / 255.0, dtype=torch.float32)
 X_val = torch.tensor(X_train[2000:3000].reshape(-1, 784) / 255.0, dtype=torch.float32)
 
-# Train the autoencoder
-print("Training Zor autoencoder on Fashion-MNIST...")
 start_time = time.time()
 for epoch in range(500):
-    # Simple random batch selection
     indices = torch.randperm(len(X_train_subset))[:48]
     batch = X_train_subset[indices]
-    
-    # Forward pass and compute error
-    outputs = snn.forward(batch)
-    errors = batch - outputs
+    errors = snn.train_batch(batch, batch)
     accuracy = 1.0 - torch.mean(torch.abs(errors)).item()
-    
-    # Learn from errors with accuracy scaling
-    snn.reinforce(errors, accuracy)
     
     if epoch % 50 == 0:
         print(f"Epoch {epoch}: {accuracy:.1f}% accuracy")
@@ -71,11 +54,10 @@ for epoch in range(500):
 training_time = time.time() - start_time
 print(f"Training complete! Training time: {training_time:.1f} seconds")
 
-# Validation on unseen data
 val_outputs = snn.forward(X_val, train=False)
 val_errors = X_val - val_outputs
 val_accuracy = 100.0 * (1.0 - torch.mean(torch.abs(val_errors)))
-print(f"Validation accuracy: {val_accuracy:.1f}% (on 1000 unseen samples)")
+print(f"Validation accuracy: {val_accuracy:.1f}%")
 ```
 
 **Results**: Beats MLPs using only 10 training samples (1 per class) while being 30x faster. This is all without backpropagation, using momentum-based analog-spike learning.
