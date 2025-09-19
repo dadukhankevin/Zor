@@ -10,7 +10,13 @@ class Layer:
                  activation_function=None, learning_range=1,
                  max_weight=100, device='cpu',
                  do_fitness=True, mutation_scale=0, update_vectors_every=1,
-                 optimizer_class=None, optimizer_kwargs=None):
+                 optimizer_class=None, optimizer_kwargs=None,
+                 # New optimizer/modulation knobs
+                 neg_boost=0.01, fitness_freeze_threshold=None, fitness_shrink=0.9,
+                 clip_grad_norm=None, clip_grad_value=None,
+                 enable_weight_clamp=True,
+                 accuracy_gamma=1, reward_baseline_beta=0.9,
+                 enable_reward_baseline=True):
         self.input_size = input_size
         self.device = device
         self.next_layer = None
@@ -29,10 +35,26 @@ class Layer:
         self.mutation_scale = mutation_scale
         self.update_vectors_every = update_vectors_every
         
+        # Track whether user supplied custom optimizer settings
+        self.optimizer_is_default = (optimizer_class is None and optimizer_kwargs is None)
+
         # Store optimizer configuration for later initialization
-        self.optimizer_class = optimizer_class or torch.optim.Adam
-        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001}
+        self.optimizer_class = optimizer_class or torch.optim.AdamW
+        # Avoid unintended regularization from AdamW default weight_decay
+        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001, 'weight_decay': 0.0}
         self.optimizer = None  # Will be initialized when weights are created 
+
+        # Modulation/regularization configuration
+        self.neg_boost = neg_boost
+        self.fitness_freeze_threshold = fitness_freeze_threshold
+        self.fitness_shrink = fitness_shrink
+        self.clip_grad_norm = clip_grad_norm
+        self.clip_grad_value = clip_grad_value
+        self.enable_weight_clamp = enable_weight_clamp
+        self.accuracy_gamma = accuracy_gamma
+        self.reward_baseline_beta = reward_baseline_beta
+        self.reward_baseline = None
+        self.enable_reward_baseline = enable_reward_baseline
 
     def init_weights(self, next_layer):
         self.next_layer = next_layer
@@ -40,23 +62,37 @@ class Layer:
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
         self.weights.requires_grad_(True)  # Enable gradients for PyTorch optimizer
         self.fitness = torch.zeros_like(self.weights)
+        # Initialize reward baseline (EMA) matching the outgoing dimension
+        self.reward_baseline = torch.zeros((1, next_layer.input_size), device=self.device)
         
         # Initialize PyTorch optimizer
         self.optimizer = self.optimizer_class([self.weights], **self.optimizer_kwargs)
 
     def _apply_optimizer_update(self, scaled_gradient):
-        """Apply PyTorch optimizer update with fitness modulation"""
+        """Apply PyTorch optimizer update with fitness modulation and safety features."""
         fitness = torch.relu(self.fitness)
         
         # Apply fitness modulation to gradient
-        modulated_gradient = scaled_gradient * (1-fitness) * (1 + 0.01 * (scaled_gradient < 0).float())
+        modulated_gradient = scaled_gradient * (1 - fitness) * (1 + self.neg_boost * (scaled_gradient < 0).float())
+
+        # Optionally shrink updates where fitness is high (progressive freezing)
+        if self.fitness_freeze_threshold is not None:
+            mask = (fitness > self.fitness_freeze_threshold).float()
+            modulated_gradient = modulated_gradient * (1 - self.fitness_shrink * mask)
+
         # PyTorch optimizers perform gradient descent: w -= lr * grad
         # Our reinforce logic computes a direction to INCREASE weights, so negate here
         modulated_gradient = -modulated_gradient
         
-        # Set gradient and step
+        # Set gradient and optional clipping, then step
         self.optimizer.zero_grad()
         self.weights.grad = modulated_gradient
+
+        if self.clip_grad_value is not None:
+            torch.nn.utils.clip_grad_value_([self.weights], self.clip_grad_value)
+        if self.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_([self.weights], self.clip_grad_norm)
+
         self.optimizer.step()
     
     def get_activation(self):
@@ -147,20 +183,33 @@ class Layer:
 
 
             elig = torch.relu(elig)  # More efficient than clamp(0, math.inf)
-            gradient = ((self.post_compute_spikes.T @ signal) / batch_size) * elig
+            # Reward baseline (EMA) to reduce variance
+            if self.enable_reward_baseline:
+                if self.reward_baseline is None:
+                    self.reward_baseline = torch.zeros_like(signal.mean(dim=0, keepdim=True))
+                beta = self.reward_baseline_beta
+                batch_reward = signal.mean(dim=0, keepdim=True)
+                self.reward_baseline = beta * self.reward_baseline + (1 - beta) * batch_reward
+                centered_signal = signal - self.reward_baseline
+            else:
+                centered_signal = signal
+
+            gradient = ((self.post_compute_spikes.T @ centered_signal) / batch_size) * elig
 
             gradient_norm = torch.norm(gradient)
             if gradient_norm > self.learning_range:
                 gradient *= (self.learning_range / gradient_norm)
 
-            scale = (1-accuracy)
+            # Accuracy scaling with gamma
+            scale = (1 - accuracy) ** self.accuracy_gamma
             scaled_gradient = gradient * scale
             
             # Apply optimizer update using the new unified system
             self._apply_optimizer_update(scaled_gradient)
             
             # In-place clamp to preserve the optimizer's Parameter reference
-            self.weights.clamp_(-self.max_weight, self.max_weight)
+            if self.enable_weight_clamp:
+                self.weights.clamp_(-self.max_weight, self.max_weight)
             return next_signal
         return signal
 
@@ -170,12 +219,12 @@ class Layer:
 class Zor:
     def __init__(self, layers, optimizer_class=None, optimizer_kwargs=None):
         self.layers = layers
-        self.optimizer_class = optimizer_class or torch.optim.Adam
-        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001}
+        self.optimizer_class = optimizer_class or torch.optim.AdamW
+        self.optimizer_kwargs = optimizer_kwargs or {'lr': 0.001, 'weight_decay': 0.0}
         
         # Apply optimizer settings to all layers that don't already have custom optimizers
         for layer in layers:
-            if layer.optimizer_class == torch.optim.Adam and layer.optimizer_kwargs == {'lr': 0.001}:
+            if getattr(layer, 'optimizer_is_default', True):
                 # Layer is using defaults, apply Zor-level optimizer settings
                 layer.optimizer_class = self.optimizer_class
                 layer.optimizer_kwargs = self.optimizer_kwargs.copy()
