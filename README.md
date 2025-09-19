@@ -25,7 +25,7 @@ Zor consistently outperforms traditional MLPs across all data scales while achie
 - **Superior Accuracy**: Zor achieves 2-4% higher validation accuracy across all datasets
 - **Exceptional Reconstruction Quality**: 1.5-2.5dB PSNR improvement (20+ dB at scale)
 - **Competitive Speed**: Forward pass times are nearly identical (1.3ms vs 1.2ms)  
-- **No Backpropagation**: Achieves these results using novel Adam-optimized analog-spike learning
+- **No Backpropagation**: Achieves these results using novel analog-spike learning
 
 Zor uses a novel learning rule without derivatives, achieving better generalization with smaller train/validation gaps. See [detailed test results](examples/readme.md).
 
