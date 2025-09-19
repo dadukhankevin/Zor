@@ -126,11 +126,7 @@ If you want to really know how it works look at the code.
 
 ## Quick Start
 
-Run the Fashion-MNIST autoencoder example to see Zor in action:
-
-```bash
-python fashon.py
-```
+Look at the examples in `/examples` I will add more and more.
 
 ## Roadmap
 Zor is the result of many, many, sleepless nights pulling my hair out over how stupid backpropagation is vs how simple I felt like spike-based learning should be, and there's still a ways to go, so here's a roadmap:
