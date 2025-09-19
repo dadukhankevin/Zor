@@ -4,11 +4,12 @@ import math
 from activation_functions import sigmoid
 import matplotlib.pyplot as plt
 
+#16 = 300
 class Layer:
     def __init__(self, input_size, 
-                 activation_function=None, learning_range=0.28, 
-                 max_weight=2, device='cpu',
-                 momentum_factor=0.75, do_fitness=False, mutation_scale=0):
+                 activation_function=None, learning_range=1,
+                 max_weight=100, device='cpu',
+                 momentum_factor=0.87, do_fitness=True, mutation_scale=0):
         self.input_size = input_size
         self.device = device
         self.next_layer = None
@@ -74,12 +75,10 @@ class Layer:
             old_weights = self.weights.clone()
 
             elig = (self.post_compute_spikes.T @ self.next_layer.post_compute_spikes) / batch_size
-
+            elig = elig * old_weights
             if self.do_fitness:
                 batch_reward = signal.mean(dim=0, keepdim=True) 
-                update =  elig * next_layer_sparsity * batch_reward
-                update = update - update.mean()
-
+                update = elig * next_layer_sparsity * batch_reward
                 self.fitness += update #* accuracy
                 norm = torch.norm(torch.abs(self.fitness), dim=0, keepdim=True) + 1e-8
                 self.fitness = self.fitness / norm
@@ -103,7 +102,6 @@ class Layer:
             fitness = torch.clamp(self.fitness, 0, math.inf)
             self.weights += self.momentum * (1-fitness) * (1 + 0.01 * (self.momentum < 0).float())
             self.weights = torch.clamp(self.weights, -self.max_weight, self.max_weight)
-
             return signal @ old_weights.T
         return signal
 
