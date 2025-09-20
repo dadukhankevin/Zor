@@ -41,9 +41,9 @@ X_pool = X_train_full[:POOL_SIZE]
 X_eval = X_test_full[:EVAL_SIZE]
 
 snn = Zor([
-    Layer(3072, do_fitness=True, device=device),
-    Layer(728, do_fitness=True, device=device),
-    Layer(3072, do_fitness=False, device=device)
+    Layer(3072, device=device),
+    Layer(728, device=device),
+    Layer(3072, device=device)
 ], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
 
 # Reward baseline for variance reduction

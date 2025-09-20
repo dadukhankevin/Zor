@@ -123,10 +123,10 @@ class MLPAutoencoder(nn.Module):
 def create_zor_model(input_size, bottleneck_size, device):
     """Create Zor model (Adam optimizer, lr=0.001) with specified architecture"""
     return Zor([
-        Layer(input_size, do_fitness=True, device=device),
-        Layer(bottleneck_size, do_fitness=True, device=device),
-        Layer(input_size, do_fitness=False, device=device)
-    ], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
+        Layer(input_size, device=device),
+        Layer(bottleneck_size, device=device),
+        Layer(input_size, device=device)
+    ])
 
 def run_zor_benchmark(X_pool, X_eval, config, epochs, device):
     """Run Zor benchmark with given parameters"""
