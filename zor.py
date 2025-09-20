@@ -9,7 +9,7 @@ class Layer:
     def __init__(self, input_size, 
                  activation_function=None, learning_range=1,
                  max_weight=100, device='cpu',
-                 do_fitness=True, mutation_scale=0, update_vectors_every=1,
+                 do_fitness=True, mutation_scale=0,
                  optimizer_class=None, optimizer_kwargs=None):
         self.input_size = input_size
         self.device = device
@@ -27,7 +27,6 @@ class Layer:
         self.accuracy_ema = None
         self.last_accuracy = None
         self.mutation_scale = mutation_scale
-        self.update_vectors_every = update_vectors_every
         
         # Store optimizer configuration for later initialization
         self.optimizer_class = optimizer_class or torch.optim.Adam
@@ -208,6 +207,7 @@ class Zor:
         outputs = self.forward(input_data, train=True)
         errors = target_data - outputs
         accuracy = 1.0 - float(torch.mean(torch.abs(errors)))
+        accuracy = accuracy
         self.accuracy_history.append(accuracy)
         self.reinforce(errors, accuracy)
         return errors

@@ -29,11 +29,11 @@ def psnr(y_true, y_pred, eps=1e-8):
 X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 
-POOL_SIZE = 500
+POOL_SIZE = 50000
 EVAL_SIZE = 2000
 BATCH_SIZE = 512
 
-EPOCHS = 1000
+EPOCHS = 5000
 VALIDATION_INTERVAL = 25
 PRINT_INTERVAL = 50
 
@@ -41,10 +41,14 @@ X_pool = X_train_full[:POOL_SIZE]
 X_eval = X_test_full[:EVAL_SIZE]
 
 snn = Zor([
-    Layer(3072, do_fitness=True, device=device, update_vectors_every=2),
-    Layer(728, do_fitness=True, device=device, update_vectors_every=2),
-    Layer(3072, do_fitness=False, device=device, update_vectors_every=1000)
+    Layer(3072, do_fitness=True, device=device),
+    Layer(728, do_fitness=True, device=device),
+    Layer(3072, do_fitness=False, device=device)
 ], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
+
+# Reward baseline for variance reduction
+reward_baseline = 0.0
+baseline_momentum = 0.99
 
 validation_psnr_history = []
 validation_mae_history = []
