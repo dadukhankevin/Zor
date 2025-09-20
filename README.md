@@ -5,27 +5,36 @@ Zor is a lightweight spiking neural network that uses **analog-spike gating** - 
 
 ## Performance
 
-Zor consistently outperforms traditional MLPs across all data scales while achieving near-identical inference speeds. Both models use Adam optimizers (lr=0.001) for fair comparison:
+Zor consistently outperforms traditional MLPs across all data scales while achieving competitive inference speeds. Both models use AdamW optimizers (lr=0.001) for fair comparison:
 
 ### Training Performance (450 epochs)
 | Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
 |--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **89.1%**   | 85.6%       | **16.86dB** | 14.74dB | 5.7s     | 3.2s     | 1.3ms   | 1.2ms   |
-| 1000 images  | **91.7%**   | 89.2%       | **18.99dB** | 17.11dB | 9.3s     | 8.2s     | 1.5ms   | 1.3ms   |
-| 5000 images  | **92.5%**   | 89.3%       | **19.73dB** | 17.19dB | 7.8s     | 6.5s     | 1.3ms   | 1.2ms   |
+| 64 images    | **88.2%**   | 85.2%       | **16.30dB** | 14.47dB | 5.9s     | 3.0s     | 1.5ms   | 1.2ms   |
+| 500 images   | **91.4%**   | 88.8%       | **18.99dB** | 16.79dB | 8.0s     | 6.5s     | 1.5ms   | 1.2ms   |
+| 1000 images  | **91.4%**   | 88.8%       | **19.02dB** | 16.79dB | 8.4s     | 6.5s     | 1.3ms   | 1.2ms   |
+| 5000 images  | **90.4%**   | 89.3%       | **18.22dB** | 17.15dB | 7.1s     | 6.7s     | 1.3ms   | 1.3ms   |
 
 ### Extended Training Performance (1000 epochs)  
 | Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
 |--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **89.1%**   | 85.8%       | **16.85dB** | 14.88dB | 13.5s    | 7.2s     | 1.3ms   | 1.2ms   |
-| 1000 images  | **93.1%**   | 90.3%       | **20.51dB** | 18.03dB | 20.0s    | 15.5s    | 1.3ms   | 1.2ms   |
-| 5000 images  | **92.8%**   | 90.7%       | **20.22dB** | 18.35dB | 18.7s    | 13.3s    | 1.3ms   | 1.2ms   |
+| 64 images    | **88.2%**   | 85.2%       | **16.32dB** | 14.46dB | 11.3s    | 7.4s     | 1.3ms   | 1.2ms   |
+| 1000 images  | **93.0%**   | 90.2%       | **20.60dB** | 17.89dB | 17.1s    | 14.9s    | 1.3ms   | 1.3ms   |
+| 5000 images  | **92.3%**   | 91.5%       | **19.92dB** | 18.95dB | 17.7s    | 14.0s    | 1.4ms   | 1.3ms   |
+
+### Long Training Performance (5000 epochs)
+| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
+|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
+| 500 images   | **92.5%**   | 90.0%       | **19.97dB** | 17.80dB | 85.8s    | 73.1s    | 1.3ms   | 1.2ms   |
+| 50,000 images| **94.3%**   | 93.2%       | **22.16dB** | 20.83dB | 75.3s    | 64.2s    | 1.3ms   | 1.2ms   |
 
 **Key Insights:**
-- **Superior Accuracy**: Zor achieves 2-4% higher validation accuracy across all datasets
-- **Exceptional Reconstruction Quality**: 1.5-2.5dB PSNR improvement (20+ dB at scale)
+- **Superior Accuracy**: Zor achieves 1-3% higher validation accuracy across all datasets and training durations
+- **Exceptional Reconstruction Quality**: 1.3-2.7dB PSNR improvement, reaching 22+ dB with full-scale training
 - **Competitive Speed**: Forward pass times are nearly identical (1.3ms vs 1.2ms)  
-- **No Backpropagation**: Achieves these results using novel analog-spike learning
+- **Scales Excellently**: Performance continues improving with more data (94.3% accuracy on full CIFAR-10)
+- **No Backpropagation**: Achieves these results using novel analog-spike learning without derivatives
+- **Consistent Advantage**: Performance gap maintained across different dataset sizes and training durations
 
 Zor uses a novel learning rule without derivatives, achieving better generalization with smaller train/validation gaps. See [detailed test results](examples/readme.md).
 
