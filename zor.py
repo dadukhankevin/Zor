@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-from activation_functions import sigmoid
+from activation_functions import sigmoid, relu
 import matplotlib.pyplot as plt
 
 class Layer:
@@ -19,7 +19,7 @@ class Layer:
         self.optimizer_kwargs = optimizer_kwargs
         self.post_compute_spikes = None
         self.max_weight = max_weight
-        self.threshold = -1
+        self.threshold = -2
         self.threshold_initialized = False
         self.iteration = 0
         self.optimizer = optimizer 
@@ -86,16 +86,19 @@ class Layer:
     @torch.no_grad()
     def reinforce(self, signal, accuracy):
         signal /= signal.norm(dim=0, keepdim=True)
+        signal = torch.clamp(signal, -1, 1)
         batch_size = self.post_compute_spikes.shape[0]
         self.iteration += 1
 
         if self.next_layer:
             next_signal = signal @ self.weights.T
-            elig = (self.spikes.T @ self.next_layer.post_compute_spikes)
+            pre = self.post_compute_spikes
+            post = self.next_layer.spikes
+            pre /= (pre.norm(dim=0, keepdim=True) + 1e-8)
+            post /= (post.norm(dim=0, keepdim=True) + 1e-8)
 
-            # elig /= elig.norm(dim=0, keepdim=True)
-            elig = torch.clamp(elig, 0, 1)
-            gradient = (self.post_compute_spikes.T @ signal) * elig
+            post = torch.abs(post)
+            gradient = (pre.T @ (signal * post))
             self._apply_optimizer_update(gradient)
             self.weights.clamp_(-self.max_weight, self.max_weight)
             return next_signal
@@ -130,8 +133,10 @@ class Zor:
     @torch.no_grad()
     def train_batch(self, input_data, target_data):
         outputs = self.forward(input_data, train=True)
-        errors = target_data - outputs
+        errors = (target_data - outputs)
+        errors = errors
         accuracy = 1.0 - float(torch.mean(torch.abs(errors)))
+
         accuracy = accuracy
         self.accuracy_history.append(accuracy)
         self.reinforce(errors, accuracy)
@@ -153,10 +158,9 @@ class Zor:
             return accuracy
     
     def plot_accuracy(self):
-        # Convert to CPU for matplotlib
         if isinstance(self.accuracy_history[0], torch.Tensor):
             history = [x.cpu() if hasattr(x, 'cpu') else x for x in self.accuracy_history]
         else:
             history = self.accuracy_history
-        plt.plot(history)
+        plt.plot(history, '-')
         plt.show()
