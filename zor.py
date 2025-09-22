@@ -19,7 +19,7 @@ class Layer:
         self.optimizer_kwargs = optimizer_kwargs
         self.post_compute_spikes = None
         self.max_weight = max_weight
-        self.threshold = -math.inf
+        self.threshold = -1
         self.threshold_initialized = False
         self.iteration = 0
         self.optimizer = optimizer 
@@ -29,7 +29,6 @@ class Layer:
         scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
         self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
         self.weights.requires_grad_(True)  # Enable gradients for PyTorch optimizer
-        self.threshold = - 1
         self.optimizer = self.optimizer([self.weights], **self.optimizer_kwargs)
 
     def _apply_optimizer_update(self, scaled_gradient):
@@ -93,6 +92,8 @@ class Layer:
         if self.next_layer:
             next_signal = signal @ self.weights.T
             elig = (self.spikes.T @ self.next_layer.post_compute_spikes)
+
+            # elig /= elig.norm(dim=0, keepdim=True)
             elig = torch.clamp(elig, 0, 1)
             gradient = (self.post_compute_spikes.T @ signal) * elig
             self._apply_optimizer_update(gradient)
@@ -159,4 +160,3 @@ class Zor:
             history = self.accuracy_history
         plt.plot(history)
         plt.show()
-        
