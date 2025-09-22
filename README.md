@@ -8,25 +8,25 @@ Zor is a lightweight spiking neural network that uses **analog-spike gating** - 
 Zor consistently outperforms traditional MLPs across all data scales while achieving dramatically faster training speeds. Both models use AdamW optimizers for fair comparison:
 
 ### Training Performance (450 epochs)
-| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
-|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **89.4%**   | 88.3%       | **17.19dB** | 16.46dB | **1.5s** | 3.2s     | **0.2ms** | 0.3ms   |
-| 500 images   | **92.7%**   | 90.9%       | **20.26dB** | 18.63dB | **1.6s** | 3.3s     | **0.2ms** | 0.3ms   |
-| 1000 images  | **93.1%**   | 89.4%       | **20.72dB** | 17.35dB | **1.6s** | 3.4s     | 0.7ms   | **0.3ms** |
-| 5000 images  | **92.6%**   | 91.6%       | **20.21dB** | 19.26dB | **1.5s** | 3.1s     | **0.2ms** | 0.3ms   |
+| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Speedup | Zor FWD | MLP FWD |
+|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|---------|
+| 64 images    | **89.4%**   | 88.3%       | **17.19dB** | 16.46dB | **1.5s** | 3.2s     | **+113%** | **0.2ms** | 0.3ms   |
+| 500 images   | **92.7%**   | 90.9%       | **20.26dB** | 18.63dB | **1.6s** | 3.3s     | **+106%** | **0.2ms** | 0.3ms   |
+| 1000 images  | **93.1%**   | 89.4%       | **20.72dB** | 17.35dB | **1.6s** | 3.4s     | **+113%** | 0.7ms   | **0.3ms** |
+| 5000 images  | **92.6%**   | 91.6%       | **20.21dB** | 19.26dB | **1.5s** | 3.1s     | **+107%** | **0.2ms** | 0.3ms   |
 
 ### Extended Training Performance (1000 epochs)  
-| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
-|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 64 images    | **89.5%**   | 88.4%       | **17.26dB** | 16.50dB | **3.8s** | 7.6s     | **0.3ms** | 0.3ms   |
-| 1000 images  | **93.0%**   | 91.2%       | **20.73dB** | 19.00dB | **4.1s** | 6.7s     | **0.2ms** | 0.3ms   |
-| 5000 images  | **93.5%**   | 92.2%       | **21.36dB** | 19.92dB | **3.4s** | 6.9s     | **0.3ms** | 0.3ms   |
+| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Speedup | Zor FWD | MLP FWD |
+|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|---------|
+| 64 images    | **89.5%**   | 88.4%       | **17.26dB** | 16.50dB | **3.8s** | 7.6s     | **+100%** | **0.3ms** | 0.3ms   |
+| 1000 images  | **93.0%**   | 91.2%       | **20.73dB** | 19.00dB | **4.1s** | 6.7s     | **+63%** | **0.2ms** | 0.3ms   |
+| 5000 images  | **93.5%**   | 92.2%       | **21.36dB** | 19.92dB | **3.4s** | 6.9s     | **+103%** | **0.3ms** | 0.3ms   |
 
 ### Long Training Performance (5000 epochs)
-| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Zor FWD | MLP FWD |
-|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|
-| 500 images   | **93.0%**   | 91.3%       | **20.76dB** | 19.04dB | **22.0s** | 47.4s    | **0.3ms** | 0.3ms   |
-| 50,000 images| 93.8%       | **94.0%**   | 21.94dB  | **22.00dB** | **18.6s** | 38.3s    | **0.2ms** | 0.3ms   |
+| Dataset Size | Zor Val Acc | MLP Val Acc | Zor PSNR | MLP PSNR | Zor Time | MLP Time | Speedup | Zor FWD | MLP FWD |
+|--------------|-------------|-------------|----------|----------|----------|----------|---------|---------|---------|
+| 500 images   | **93.0%**   | 91.3%       | **20.76dB** | 19.04dB | **22.0s** | 47.4s    | **+115%** | **0.3ms** | 0.3ms   |
+| 50,000 images| 93.8%       | **94.0%**   | 21.94dB  | **22.00dB** | **18.6s** | 38.3s    | **+106%** | **0.2ms** | 0.3ms   |
 
 **Key Insights:**
 - **Superior Accuracy**: Zor achieves 1-4% higher validation accuracy across most datasets and training durations
