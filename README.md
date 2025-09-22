@@ -2,7 +2,6 @@
 
 Zor is a lightweight spiking neural network that uses **analog-spike gating** - binary spike decisions control information flow, while learning operates on the continuous analog values that pass through. This combines the computational efficiency of sparse spiking with the rich gradients needed for effective learning.
 
-
 ## Performance
 
 Zor seems to outperform traditional MLPs across all data scales while achieving dramatically faster training speeds (twice as fast in controlled tests).
@@ -22,9 +21,9 @@ from keras.datasets.fashion_mnist import load_data
 SAMPLES_PER_CLASS = 2
 snn = Zor([
     Layer(784),
-    Layer(64), 
+    Layer(64),
     Layer(784)
-], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
+])
 
 (X_train, y_train), (X_test, _) = load_data()
 
@@ -42,7 +41,7 @@ for epoch in range(500):
     batch = X_train_subset[indices]
     errors = snn.train_batch(batch, batch)
     accuracy = 1.0 - torch.mean(torch.abs(errors)).item()
-    
+
     if epoch % 50 == 0:
         print(f"Epoch {epoch}: {accuracy:.1f}% accuracy")
 
@@ -65,7 +64,7 @@ Zor operates on this philosophy:
 
 - **Spiking** -> The "spiking" aspect of neural networks is vital to efficient learning, and backpropagation is likely orders of magnitude less efficient than an optimal learning rule.
 
-- **Simplicity** -> SNNs are typically ridiculously complicated because they essentially try to simulate biological neurons. Zor takes the best of both traditional *ANNs* and efficiency lessons from nature (and my imagination).
+- **Simplicity** -> SNNs are typically ridiculously complicated because they essentially try to simulate biological neurons. Zor takes the best of both traditional _ANNs_ and efficiency lessons from nature (and my imagination).
 
 - **Framing** -> Rather than redesign the network for a problem, we should redesign the problem for the network.
 
@@ -81,8 +80,7 @@ Zor operates on this philosophy:
 
 **Normal**: SNNs often implement either "Hebbian" learning or "Backpropagation Through Time" (BTT). Hebbian learning strengthens connections between coactive neurons, but this often leads to runaway behaviour and requires complex homeostatic pressures that often suppress learning. BTT is terrible for many reasons, including that I generally think that backpropagation may not be needed for learning (nothing in nature implements it, and "digiture" implements it poorly).
 
-**Zor**: Zor does something *vaguely similar* to three-factor Hebbian learning, but is also quite different. Rather than looking merely at coactivity, Zor looks at *how* coactive neurons are, and it can do this because we use analog spiking rather than binary. This strengthens the signal enormously. Zor also "backpropagates" errors across the coactivity matrix, weighted by how novel the coactivity is between any two neurons. Unlike many alternatives to backpropagation, Zor can tell to what extent and in what direction each weight should change.
-
+**Zor**: Zor does something _vaguely similar_ to three-factor Hebbian learning, but is also quite different. Rather than looking merely at coactivity, Zor looks at _how_ coactive neurons are, and it can do this because we use analog spiking rather than binary. This strengthens the signal enormously. Zor also "backpropagates" errors across the coactivity matrix, weighted by how novel the coactivity is between any two neurons. Unlike many alternatives to backpropagation, Zor can tell to what extent and in what direction each weight should change.
 
 - **Analog-spike gating**: Binary spikes gate continuous values - efficiency of sparsity, richness of analog learning
 - **Subtractive novelty gating**: Down-weights familiar patterns rather than boosting novel ones
@@ -91,7 +89,7 @@ Zor operates on this philosophy:
 
 ## Relation to prior work
 
-Zor takes some inspiration from several lines of work (three‑factor rules, local eligibility traces, layer‑local objectives, and feedback‑alignment‑style signals) but combines them differently, and adds new evolutionary concepts like fitness to weights as well as many other things. 
+Zor takes some inspiration from several lines of work (three‑factor rules, local eligibility traces, layer‑local objectives, and feedback‑alignment‑style signals) but combines them differently, and adds new evolutionary concepts like fitness to weights as well as many other things.
 
 How Zor is different:
 
@@ -109,7 +107,7 @@ In short, it overlaps in spirit with prior ideas but the specific mechanics and 
 
 **Normal**: Outputs are tricky for SNNs, sometimes people look at their firing frequencies, since the spikes themselves carry no useful information in the output layer. This requires more computation and bluntly, is bad design. Normal neural networks have conventient outputs that can take any value they need to (especially through activation functions).
 
-**Zor**: Zor directly returns instant *charges* for the output layer rather than spikes, the spikes are still usefull for learning though since they carry an important signal! You can also optionally add activation functions to any layer in Zor but I haven't found any example where that helps yet. Seems they aren't needed.
+**Zor**: Zor directly returns instant _charges_ for the output layer rather than spikes, the spikes are still usefull for learning though since they carry an important signal! You can also optionally add activation functions to any layer in Zor but I haven't found any example where that helps yet. Seems they aren't needed.
 
 **Zor** is also pretty stable, and not prone to seizures like some SNNs (: The homeostatic measures taken also help learning rather than hinder it.
 
@@ -117,13 +115,14 @@ In short, it overlaps in spirit with prior ideas but the specific mechanics and 
 
 If you want to really know how it works look at the code.
 
-*Zor is a mix between "Zeus" and "Thor" and conveniently means strength in several languages.*
+_Zor is a mix between "Zeus" and "Thor" and conveniently means strength in several languages._
 
 ## Quick Start
 
 Look at the examples in `/examples` I will add more and more.
 
 ## Roadmap
+
 Zor is the result of many, many, sleepless nights pulling my hair out over how stupid backpropagation is vs how simple I felt like spike-based learning should be, and there's still a ways to go, so here's a roadmap:
 
 - GPU acceleration (DONE!). I built Zor with the idea that we shouldn't need to use "neuromorphic chips" in order to benifit from spike based efficiency, so this is HIGH on the list.
