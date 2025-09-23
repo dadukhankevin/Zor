@@ -1,48 +1,52 @@
+from __future__ import annotations
 import torch
-import torch.nn as nn
 import math
-from activation_functions import sigmoid, relu
 import matplotlib.pyplot as plt
+from typing import Any, Callable, Optional
 
 class Layer:
-    def __init__(self, input_size, 
-                 activation_function=None,
-                 max_weight=1, device='cpu',
-                 optimizer=torch.optim.AdamW,
-                 optimizer_kwargs={'lr': 0.001}):
-        self.input_size = input_size
-        self.device = device
-        self.next_layer = None
-        self.weights = None
-        self.spikes = torch.zeros(self.input_size, dtype=torch.float32, device=device)
-        self.activation_function = activation_function
-        self.optimizer_kwargs = optimizer_kwargs
-        self.post_compute_spikes = None
-        self.max_weight = max_weight
-        self.threshold = -2
-        self.threshold_initialized = False
-        self.iteration = 0
-        self.optimizer = optimizer 
+    def __init__(self, input_size: int, 
+                 activation_function: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+                 max_weight: float = 1,
+                 device: str | torch.device = 'cpu',
+                 optimizer: type[torch.optim.Optimizer] = torch.optim.AdamW,
+                 optimizer_kwargs: dict[str, Any] = {'lr': 0.001}) -> None:
+        self.input_size: int = input_size
+        self.device: str | torch.device = device
+        self.next_layer: Optional[Layer] = None
+        self.weights: Optional[torch.Tensor] = None
+        self.spikes: torch.Tensor = torch.zeros(self.input_size, dtype=torch.float32, device=device)
+        self.activation_function: Optional[Callable[[torch.Tensor], torch.Tensor]] = activation_function
+        self.optimizer_kwargs: dict[str, Any] = optimizer_kwargs
+        self.post_compute_spikes: Optional[torch.Tensor] = None
+        self.max_weight: float = float(max_weight)
+        self.threshold: float = -2
+        self.threshold_initialized: bool = False
+        self.iteration: int = 0
+        self.optimizer_class: type[torch.optim.Optimizer] = optimizer
+        self.optimizer: Optional[torch.optim.Optimizer] = None
 
-    def init_weights(self, next_layer):
+    def init_weights(self, next_layer: Layer) -> None:
         self.next_layer = next_layer
-        scale = torch.sqrt(torch.tensor(2.0 / (self.input_size + next_layer.input_size)))
-        self.weights = torch.normal(0, scale, (self.input_size, next_layer.input_size), device=self.device) / 2
+        scale = math.sqrt(2.0 / (self.input_size + next_layer.input_size))
+        self.weights = (torch.randn((self.input_size, next_layer.input_size), device=self.device) * (scale / 2.0))
         self.weights.requires_grad_(True)  # Enable gradients for PyTorch optimizer
-        self.optimizer = self.optimizer([self.weights], **self.optimizer_kwargs)
+        self.optimizer = self.optimizer_class([self.weights], **self.optimizer_kwargs)
 
-    def _apply_optimizer_update(self, scaled_gradient):
+    def _apply_optimizer_update(self, scaled_gradient: torch.Tensor) -> None:
         """Apply PyTorch optimizer update with safety features (no fitness modulation)."""                
+        assert self.optimizer is not None, "Optimizer not initialized. Call init_weights first."
+        assert self.weights is not None, "Weights not initialized. Call init_weights first."
         self.optimizer.zero_grad()
         self.weights.grad = -scaled_gradient
         self.optimizer.step()
     
-    def get_activation(self):
-        return (self.spikes > 0).float().mean()  # Use spikes, not post_compute_spikes
+    def get_activation(self) -> float:
+        return float((self.spikes > 0).float().mean().item())  # Use spikes, not post_compute_spikes
         
     
     @torch.no_grad()
-    def forward(self, x, train=True):
+    def forward(self, x: torch.Tensor, train: bool = True) -> torch.Tensor:
         x = x.float()  # Convert to float32 for numerical stability
         
         if self.next_layer:
@@ -60,7 +64,7 @@ class Layer:
             # Dense masked inputs (fast on accelerators)
             spike_outputs = x * spikes.float()
             
-        
+            assert self.weights is not None
             if self.activation_function:
                 outputs = self.activation_function(spike_outputs)
                 if train:
@@ -84,18 +88,17 @@ class Layer:
 
 
     @torch.no_grad()
-    def reinforce(self, signal, accuracy):
-        signal /= signal.norm(dim=0, keepdim=True)
+    def reinforce(self, signal: torch.Tensor, accuracy: float) -> torch.Tensor:
+        signal = signal / signal.norm(dim=0, keepdim=True)
         signal = torch.clamp(signal, -1, 1)
-        batch_size = self.post_compute_spikes.shape[0]
         self.iteration += 1
 
-        if self.next_layer:
+        if self.next_layer and self.weights is not None and self.post_compute_spikes is not None:
             next_signal = signal @ self.weights.T
             pre = self.post_compute_spikes
             post = self.next_layer.spikes
-            pre /= (pre.norm(dim=0, keepdim=True) + 1e-8)
-            post /= (post.norm(dim=0, keepdim=True) + 1e-8)
+            pre = pre / (pre.norm(dim=0, keepdim=True) + 1e-8)
+            post = post / (post.norm(dim=0, keepdim=True) + 1e-8)
 
             post = torch.abs(post)
             gradient = (pre.T @ (signal * post))
@@ -108,30 +111,30 @@ class Layer:
 
 
 class Zor:
-    def __init__(self, layers):
-        self.layers = layers
-        self.accuracy_history = []
-        self.activation_history = [[] for _ in range(len(layers))]
-        self.last_batch = None
-        self.last_outputs = None
+    def __init__(self, layers: list[Layer]) -> None:
+        self.layers: list[Layer] = layers
+        self.accuracy_history: list[float] = []
+        self.activation_history: list[list[float]] = [[] for _ in range(len(layers))]
+        self.last_batch: Optional[torch.Tensor] = None
+        self.last_outputs: Optional[torch.Tensor] = None
         for i in range(len(layers) - 1):
             layers[i].init_weights(layers[i + 1])
 
     @torch.no_grad()
-    def forward(self, input_data, train=True):
+    def forward(self, input_data: torch.Tensor, train: bool = True) -> torch.Tensor:
         x = input_data
         for layer in self.layers:
             x = layer.forward(x, train=train)
         return x
     
-    def reinforce(self, rewards, accuracy):
+    def reinforce(self, rewards: torch.Tensor, accuracy: float) -> torch.Tensor:
         for layer in reversed(self.layers):
             rewards = layer.reinforce(rewards, accuracy)
         return rewards
     
     
     @torch.no_grad()
-    def train_batch(self, input_data, target_data):
+    def train_batch(self, input_data: torch.Tensor, target_data: torch.Tensor) -> torch.Tensor:
         outputs = self.forward(input_data, train=True)
         errors = (target_data - outputs)
         errors = errors
@@ -143,7 +146,7 @@ class Zor:
         return errors
     
     
-    def evaluate(self, validation_data, train=False):
+    def evaluate(self, validation_data: torch.Tensor, train: bool = False) -> float:
         """Evaluate on validation data without affecting model parameters."""
         with torch.inference_mode():
             # Store current spike states to restore later
@@ -157,10 +160,10 @@ class Zor:
             
             return accuracy
     
-    def plot_accuracy(self):
-        if isinstance(self.accuracy_history[0], torch.Tensor):
-            history = [x.cpu() if hasattr(x, 'cpu') else x for x in self.accuracy_history]
-        else:
-            history = self.accuracy_history
+    def plot_accuracy(self) -> None:
+        # Normalize history to floats for plotting to satisfy type checker
+        history = [
+            float(x.detach().cpu().item()) if isinstance(x, torch.Tensor) else float(x)
+        for x in self.accuracy_history]
         plt.plot(history, '-')
         plt.show()

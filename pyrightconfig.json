@@ -1,0 +1,27 @@
+{
+  "include": ["zor.py", "activation_functions.py"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "data",
+    "build",
+    "dist",
+    "examples",
+    "benchmark_comparison.py",
+    "example.py",
+    "fashon_mlp.py"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict",
+  "useLibraryCodeForTypes": true,
+  "reportMissingTypeStubs": "warning",
+  "reportUnusedImport": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportUnknownArgumentType": "warning",
+  "reportUnknownVariableType": "warning",
+  "reportUnknownParameterType": "warning",
+  "reportUnknownLambdaType": "warning",
+  "reportUntypedFunctionDecorator": "none"
+}
