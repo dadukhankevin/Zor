@@ -11,6 +11,8 @@ import time
 import matplotlib.pyplot as plt
 import random
 import numpy as np
+from typing import Any
+from numpy.typing import NDArray
 
 torch.manual_seed(42)
 random.seed(42)
@@ -20,7 +22,7 @@ np.random.seed(42)
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 print(f"Using device: {device}")
 
-def psnr(y_true, y_pred, eps=1e-8):
+def psnr(y_true: NDArray[Any], y_pred: NDArray[Any], eps: float = 1e-8) -> float:
     mse = np.mean((y_true - y_pred) ** 2)
     rmse = np.sqrt(mse + eps)
     return float(20.0 * np.log10(1.0 / (rmse + eps)))
@@ -44,7 +46,7 @@ snn = Zor([
     Layer(3072, device=device),
     Layer(728, device=device),
     Layer(3072, device=device)
-], optimizer_class=optim.Adam, optimizer_kwargs={'lr': 0.001})
+])
 
 # Reward baseline for variance reduction
 reward_baseline = 0.0
@@ -54,7 +56,7 @@ validation_psnr_history = []
 validation_mae_history = []
 validation_accuracy_history = []
 
-def _param_count(layers):
+def _param_count(layers: list[Layer]) -> int:
     return sum(layers[i].input_size * layers[i+1].input_size for i in range(len(layers) - 1))
 
 print(f"Total parameters: {_param_count(snn.layers):,}")
@@ -85,7 +87,7 @@ for step in range(EPOCHS):
         val_acc = validation_accuracy_history[-1] if validation_accuracy_history else 0
         val_psnr = validation_psnr_history[-1] if validation_psnr_history else 0
         val_mae = validation_mae_history[-1] if validation_mae_history else 0
-        print(f"Step {step}, Train: {snn.accuracy_history[-1]:.1f}%, Val: {val_acc:.1f}%, MAE: {val_mae:.4f}, PSNR: {val_psnr:.2f}dB LR: {snn.layers[0].learning_range:.3f}")
+        print(f"Step {step}, Train: {snn.accuracy_history[-1]:.1f}%, Val: {val_acc:.1f}%, MAE: {val_mae:.4f}, PSNR: {val_psnr:.2f}")
 
 elapsed_time = time.time() - start_time
 print(f"\nTraining completed in {elapsed_time:.1f}s!")
