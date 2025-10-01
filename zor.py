@@ -10,17 +10,24 @@ class Layer:
                  max_weight: float = 1,
                  device: str | torch.device = 'cpu',
                  optimizer: type[torch.optim.Optimizer] = torch.optim.AdamW,
-                 optimizer_kwargs: dict[str, Any] = {'lr': 0.001}) -> None:
+                 optimizer_kwargs: dict[str, Any] = {'lr': 0.001},
+                 min_charge: float = -5.0,
+                 stateless: bool = False) -> None:
         self.input_size: int = input_size
         self.device: str | torch.device = device
         self.next_layer: Optional[Layer] = None
         self.weights: Optional[torch.Tensor] = None
+        # Double check that we shouldn't be doing float16 or something
         self.spikes: torch.Tensor = torch.zeros(self.input_size, dtype=torch.float32, device=device)
+        self.charges: torch.Tensor = torch.zeros(self.input_size, dtype=torch.float32, device=device)
+
         self.activation_function: Optional[Callable[[torch.Tensor], torch.Tensor]] = activation_function
         self.optimizer_kwargs: dict[str, Any] = optimizer_kwargs
         self.post_compute_spikes: Optional[torch.Tensor] = None
         self.max_weight: float = float(max_weight)
         self.threshold: float = -2
+        self.min_charge: float = float(min_charge)
+        self.stateless: bool = stateless
         self.threshold_initialized: bool = False
         self.iteration: int = 0
         self.optimizer_class: type[torch.optim.Optimizer] = optimizer
@@ -48,21 +55,33 @@ class Layer:
     @torch.no_grad()
     def forward(self, x: torch.Tensor, train: bool = True) -> torch.Tensor:
         x = x.float()  # Convert to float32 for numerical stability
-        
+
         if self.next_layer:
             # Hidden layers need spike computation for gating
-            if train:
-                # Only reallocate if batch size changed (more efficient check)
-                if self.spikes.shape[0] != x.shape[0]:
-                    self.spikes = torch.zeros_like(x)
+            # Always reallocate if batch size changed (handles both train and eval)
+            if self.spikes.shape[0] != x.shape[0]:
+                self.charges = torch.zeros_like(x)
+                self.spikes = torch.zeros_like(x)
+            
+            # Zero out all charges if stateless mode enabled
+            if self.stateless:
+                self.charges.zero_()
+            else:
+                # Reset charges that fell below minimum threshold
+                self.charges[self.charges < self.min_charge] = 0
+            
+            self.charges += x
 
             # Efficient spike computation (boolean mask), keep compute dense for GEMM efficiency
-            spikes = (x > self.threshold)
+            spikes = (self.charges > self.threshold)
             if train:
                 self.spikes = spikes.float()
-
-            # Dense masked inputs (fast on accelerators)
-            spike_outputs = x * spikes.float()
+            
+            # Dense masked inputs (fast on accelerators) - compute BEFORE zeroing charges
+            spike_outputs = self.charges * spikes.float()
+            
+            # Zero out charges where spikes occurred (for next iteration)
+            self.charges[spikes] = 0
             
             assert self.weights is not None
             if self.activation_function:
@@ -75,13 +94,29 @@ class Layer:
                     self.post_compute_spikes = spike_outputs  # Remove redundant clone
                 return spike_outputs @ self.weights
         else:
+            # Output layer
             if not train:
-                return self.activation_function(x) if self.activation_function else x            
+                return self.activation_function(x) if self.activation_function else x
+            
+            # Reallocate if batch size changed
             if self.spikes.shape[0] != x.shape[0]:
+                self.charges = torch.zeros_like(x)
                 self.spikes = torch.zeros_like(x)
-            spikes = (x > self.threshold).float()
+            
+            # Zero out all charges if stateless mode enabled
+            if self.stateless:
+                self.charges.zero_()
+            else:
+                # Reset charges that fell below minimum threshold
+                self.charges[self.charges < self.min_charge] = 0
+            
+            self.charges += x
+            spikes = (self.charges > self.threshold).float()
             self.spikes = spikes
-            spike_outputs = x * spikes
+            # Compute spike outputs BEFORE zeroing charges
+            spike_outputs = self.charges * spikes
+            # Zero out charges where spikes occurred (for next iteration)
+            self.charges[spikes > 0] = 0
             final_outputs = self.activation_function(spike_outputs) if self.activation_function else spike_outputs
             self.post_compute_spikes = final_outputs  # Remove redundant clone
             return final_outputs
