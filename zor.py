@@ -52,8 +52,8 @@ class Layer:
         if self.next_layer:
             # Hidden layers need spike computation for gating
             if train:
-                # Only reallocate if batch size changed (more efficient check)
-                if self.spikes.shape[0] != x.shape[0]:
+                # Ensure spike buffer matches the full tensor shape
+                if self.spikes.shape != x.shape:
                     self.spikes = torch.zeros_like(x)
 
             # Efficient spike computation (boolean mask), keep compute dense for GEMM efficiency
@@ -77,7 +77,7 @@ class Layer:
         else:
             if not train:
                 return self.activation_function(x) if self.activation_function else x            
-            if self.spikes.shape[0] != x.shape[0]:
+            if self.spikes.shape != x.shape:
                 self.spikes = torch.zeros_like(x)
             spikes = (x > self.threshold).float()
             self.spikes = spikes
@@ -89,19 +89,33 @@ class Layer:
 
     @torch.no_grad()
     def reinforce(self, signal: torch.Tensor, accuracy: float) -> torch.Tensor:
-        signal = signal / signal.norm(dim=0, keepdim=True)
+        # Normalize error signal per feature across all leading samples/tokens
+        orig_sig_shape = signal.shape
+        signal_flat = signal.reshape(-1, signal.shape[-1])
+        sig_norm = signal_flat.norm(dim=0, keepdim=True)
+        signal_flat = signal_flat / (sig_norm + 1e-8)
+        signal = signal_flat.reshape(orig_sig_shape)
         signal = torch.clamp(signal, -1, 1)
         self.iteration += 1
 
         if self.next_layer and self.weights is not None and self.post_compute_spikes is not None:
+            # Compute next layer signal using current forward weights' transpose
             next_signal = signal @ self.weights.T
+
+            # Prepare pre- and post-activity terms with stable normalization
             pre = self.post_compute_spikes
             post = self.next_layer.spikes
-            pre = pre / (pre.norm(dim=0, keepdim=True) + 1e-8)
-            post = post / (post.norm(dim=0, keepdim=True) + 1e-8)
 
-            post = torch.abs(post)
-            gradient = (pre.T @ (signal * post))
+            pre_flat = pre.reshape(-1, pre.shape[-1])
+            post_flat = post.reshape(-1, post.shape[-1])
+            pre_flat = pre_flat / (pre_flat.norm(dim=0, keepdim=True) + 1e-8)
+            post_flat = post_flat / (post_flat.norm(dim=0, keepdim=True) + 1e-8)
+            post_flat = torch.abs(post_flat)
+
+            signal_flat = signal.reshape(-1, signal.shape[-1])
+
+            # Gradient accumulates outer products over all samples/tokens
+            gradient = pre_flat.T @ (signal_flat * post_flat)
             self._apply_optimizer_update(gradient)
             self.weights.clamp_(-self.max_weight, self.max_weight)
             return next_signal

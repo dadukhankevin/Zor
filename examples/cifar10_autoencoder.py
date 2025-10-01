@@ -28,8 +28,17 @@ def psnr(y_true: NDArray[Any], y_pred: NDArray[Any], eps: float = 1e-8) -> float
     return float(20.0 * np.log10(1.0 / (rmse + eps)))
 
 (X_train, _), (X_test, _) = cifar10.load_data()
-X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
-X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
+
+# Toggle to use tokenized (H*W, C) inputs instead of flat vectors
+USE_TOKENS = True
+
+if USE_TOKENS:
+    # (N, 32, 32, 3) -> (N, 1024, 3)  tokens ordered row-major; no channel reordering
+    X_train_full = torch.tensor(X_train / 255.0, dtype=torch.float16, device=device).reshape(-1, 1024, 3)
+    X_test_full = torch.tensor(X_test / 255.0, dtype=torch.float16, device=device).reshape(-1, 1024, 3)
+else:
+    X_train_full = torch.tensor(X_train.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
+    X_test_full = torch.tensor(X_test.reshape(-1, 3072) / 255.0, dtype=torch.float16, device=device)
 
 POOL_SIZE = 50000
 EVAL_SIZE = 2000
@@ -42,11 +51,18 @@ PRINT_INTERVAL = 50
 X_pool = X_train_full[:POOL_SIZE]
 X_eval = X_test_full[:EVAL_SIZE]
 
-snn = Zor([
-    Layer(3072, device=device),
-    Layer(728, device=device),
-    Layer(3072, device=device)
-])
+if USE_TOKENS:
+    snn = Zor([
+        Layer(3, device=device),
+        Layer(24, device=device),
+        Layer(3, device=device)
+    ])
+else:
+    snn = Zor([
+        Layer(3072, device=device),
+        Layer(728, device=device),
+        Layer(3072, device=device)
+    ])
 
 # Reward baseline for variance reduction
 reward_baseline = 0.0
@@ -80,8 +96,15 @@ for step in range(EPOCHS):
         val_accuracy = snn.evaluate(X_eval)
         validation_accuracy_history.append(val_accuracy)
         val_outputs = snn.forward(X_eval)
-        validation_psnr_history.append(psnr(X_eval.cpu().numpy(), val_outputs.cpu().numpy()))
-        validation_mae_history.append(float(torch.mean(torch.abs(X_eval - val_outputs))))
+        if USE_TOKENS:
+            # (N, 1024, 3) -> (N, 32, 32, 3)
+            val_gt = X_eval.cpu().numpy().reshape(-1, 32, 32, 3)
+            val_pred = val_outputs.detach().cpu().numpy().reshape(-1, 32, 32, 3)
+            validation_psnr_history.append(psnr(val_gt, val_pred))
+            validation_mae_history.append(float(np.mean(np.abs(val_gt - val_pred))))
+        else:
+            validation_psnr_history.append(psnr(X_eval.cpu().numpy(), val_outputs.cpu().numpy()))
+            validation_mae_history.append(float(torch.mean(torch.abs(X_eval - val_outputs))))
         
     if step % PRINT_INTERVAL == 0:
         val_acc = validation_accuracy_history[-1] if validation_accuracy_history else 0
@@ -104,7 +127,12 @@ with torch.no_grad():
     idx = torch.randperm(EVAL_SIZE)[:6]
     inputs = X_eval[idx]
     outputs = snn.forward(inputs, train=False)
-    imgs = torch.cat([inputs, outputs]).cpu().numpy().reshape(12, 32, 32, 3)
+    if USE_TOKENS:
+        inp_imgs = inputs.cpu().numpy().reshape(-1, 32, 32, 3)
+        out_imgs = outputs.cpu().numpy().reshape(-1, 32, 32, 3)
+        imgs = np.concatenate([inp_imgs, out_imgs], axis=0)
+    else:
+        imgs = torch.cat([inputs, outputs]).cpu().numpy().reshape(12, 32, 32, 3)
 
 fig, axes = plt.subplots(2, 6, figsize=(10, 3))
 for i, ax in enumerate(axes.flat):
